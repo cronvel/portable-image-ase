@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /*
 	Portable Image Ase
 
@@ -23,17 +24,32 @@
 	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 	SOFTWARE.
 */
+"use strict" ;
 
-/* global expect, describe, it, before, after */
-
-
-
-const pixpal = require( '..' ) ;
+const Ase = require( '..' ) ;
 
 
 
-describe( "..." , () => {
-	
-	it( "..." ) ;
-} ) ;
+// Argument management
+
+if ( process.argv.length < 3 ) {
+	console.error( "Expecting a PNG file" ) ;
+	process.exit( 1 ) ;
+}
+
+var sourceFile = process.argv[ 2 ] ;
+var outputFile = process.argv[ 3 ] ?? null ;
+
+
+async function test() {
+	var image = await Ase.loadImage( sourceFile , {} ) ;
+
+	/*
+	if ( outputFile ) {
+		await Ase.saveImage( outputFile , image ) ;
+	}
+	*/
+}
+
+test() ;
 

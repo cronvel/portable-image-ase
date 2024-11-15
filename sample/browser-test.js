@@ -1,5 +1,5 @@
 /*
-	Portable Image Png
+	Portable Image Ase
 
 	Copyright (c) 2024 Cédric Ronvel
 
