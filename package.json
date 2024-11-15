@@ -1,0 +1,46 @@
+{
+  "name": "portable-image-ase",
+  "version": "0.0.1",
+  "description": "Loader/saver for the .ase/.aseprite file format.",
+  "main": "lib/Ase.js",
+  "directories": {
+    "test": "test"
+  },
+  "dependencies": {
+    "stream-kit": "^0.5.4"
+  },
+  "peerDependencies": {
+    "portable-image": "^0.0.2"
+  },
+  "scripts": {
+    "test": "tea-time -R dot"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cronvel/portable-image-ase.git"
+  },
+  "keywords": [
+    "ase",
+    "aseprite",
+    "pixel",
+    "art",
+    "indexed",
+    "palette",
+    "8-bit"
+  ],
+  "author": "Cédric Ronvel",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/cronvel/portable-image-ase/issues"
+  },
+  "copyright": {
+    "title": "Portable Image Ase",
+    "years": [
+      2024
+    ],
+    "owner": "Cédric Ronvel"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
