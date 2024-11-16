@@ -1,5 +1,5 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.PortableImageAse = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
-(function (process,Buffer){(function (){
+(function (Buffer){(function (){
 /*
 	Portable Image Ase
 
@@ -29,65 +29,14 @@
 "use strict" ;
 
 
-// ASE/ASEPRITE file loader/saver.
-// See: https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
+/*
+	ASE/ASEPRITE file loader/saver.
+	See: https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
+*/
 
+const misc = require( './misc.js' ) ;
 const SequentialReadBuffer = require( 'stream-kit/lib/SequentialReadBuffer.js' ) ;
 const SequentialWriteBuffer = require( 'stream-kit/lib/SequentialWriteBuffer.js' ) ;
-
-
-// Includes depending on the environment
-var PortableImage = null ;
-var DecompressionStream = null ;
-var CompressionStream = null ;
-var loadFileAsync = null ;
-var saveFileAsync = null ;
-var download = null ;
-var require_ = require ;	// this is used to fool Browserfify, so it doesn't try to include this in the build
-
-if ( process.browser ) {
-	PortableImage = window.PortableImage ;
-	if ( ! PortableImage ) {
-		try {
-			PortableImage = require( 'portable-image' ) ;
-		}
-		catch ( error ) {}
-	}
-
-	DecompressionStream = window.DecompressionStream ;
-	CompressionStream = window.CompressionStream ;
-	loadFileAsync = async ( url ) => {
-		var response = await fetch( url ) ;
-		if ( ! response.ok ) {
-			throw new Error( "Can't retrieve file: '" + url + "', " + response.status + " - " + response.statusText ) ;
-		}
-		var bytes = await response.bytes() ;
-		var buffer = Buffer.from( bytes ) ;
-		return buffer ;
-	} ;
-	saveFileAsync = () => { throw new Error( "Can't save from browser (use .download() instead)" ) ; } ;
-	download = ( filename , buffer ) => {
-		var anchor = window.document.createElement( 'a' ) ;
-		anchor.href = window.URL.createObjectURL( new Blob( [ buffer ] , { type: 'application/octet-stream' } ) ) ;
-		anchor.download = filename ;
-
-		// Force a click to start downloading, even if the anchor is not even appended to the body
-		anchor.click() ;
-	} ;
-}
-else {
-	( { DecompressionStream , CompressionStream } = require_( 'stream/web' ) ) ;
-
-	try {
-		PortableImage = require( 'portable-image' ) ;
-	}
-	catch ( error ) {}
-
-	let fs = require_( 'fs' ) ;
-	loadFileAsync = url => fs.promises.readFile( url ) ;
-	saveFileAsync = ( url , data ) => fs.promises.writeFile( url , data ) ;
-	download = () => { throw new Error( "Can't download from non-browser (use .saveFileAsync() instead)" ) ; } ;
-}
 
 
 
@@ -101,7 +50,7 @@ function Ase() {
 
 	this.flags = - 1 ;
 	this.defaultFrameDuration = - 1 ;
-	this.transparencyColorIndex = null ;	// transparency index, only for indexed mode
+	this.transparencyColorIndex = -1 ;	// transparency index, only for indexed mode
 	this.colorCount = - 1 ;
 	this.pixelWidth = - 1 ;
 	this.pixelHeight = - 1 ;
@@ -113,59 +62,26 @@ function Ase() {
     
     // Frames data
     this.frames = [] ;
+
+    // Linked data
+    this.palette = null ;
 }
 
 module.exports = Ase ;
 
-Ase.PortableImage = PortableImage ;
+const Frame = Ase.Frame = require( './Frame.js' ) ;
+const Layer = Ase.Layer = require( './Layer.js' ) ;
+const Cel = Ase.Cel = require( './Cel.js' ) ;
+
+Ase.PortableImage = misc.PortableImage ;
 
 
 
-function Frame( parent ) {
-	Object.defineProperty( this , 'parent' , { value: parent } ) ;
-	this.chunkCount = - 1 ;
-	this.duration = parent.defaultFrameDuration ;	// in ms
-	this.palette = [] ;
-	this.layers = [] ;
-	this.cels = [] ;
-}
+// ASE constants
 
-Ase.Frame = Frame ;
-
-
-
-function Layer() {
-	this.visible = true ;
-	this.type = - 1 ;
-	this.childLevel = - 1 ;
-	this.blendMode = - 1 ;
-	this.opacity = - 1 ;
-	this.name = '' ;
-	this.tilesetIndex = - 1 ;
-}
-
-Ase.Layer = Layer ;
-
-
-
-// They call "Cel" a single-layer image
-function Cel() {
-	this.layerIndex = - 1 ;
-	this.width = - 1 ;
-	this.height = - 1 ;
-	this.x = 0 ;
-	this.y = 0 ;
-	this.zIndex = 0 ;
-	this.opacity = - 1 ;
-	this.type = - 1 ;
-	
-	this.pixelBuffer = null ;
-
-	// Only relevant for linked cel (type=1)
-	this.linkedFrame = - 1 ;
-}
-
-Ase.Cel = Cel ;
+Ase.COLOR_TYPE_RGBA = 0 ;
+Ase.COLOR_TYPE_GRAYSCALE_ALPHA = 1 ;
+Ase.COLOR_TYPE_INDEXED = 2 ;
 
 
 
@@ -208,21 +124,13 @@ Ase.createEncoder = ( params = {} ) => {
 
 
 
-// ASE constants
-
-Ase.COLOR_TYPE_RGBA = 0 ;
-Ase.COLOR_TYPE_GRAYSCALE_ALPHA = 1 ;
-Ase.COLOR_TYPE_INDEXED = 2 ;
-
-
-
 Ase.load = async function( url , options = {} ) {
-	var buffer = await loadFileAsync( url ) ;
+	var buffer = await misc.loadFileAsync( url ) ;
 	return Ase.decode( buffer , options ) ;
 } ;
 
 Ase.loadImage = async function( url , options = {} ) {
-	var buffer = await loadFileAsync( url ) ;
+	var buffer = await misc.loadFileAsync( url ) ;
 	return Ase.decodeImage( buffer , options ) ;
 } ;
 
@@ -241,12 +149,17 @@ Ase.decodeImage = function( buffer , options = {} ) {
 
 
 
-Ase.prototype.toImage = function( PortableImageClass = PortableImage ) {
+Ase.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
+	// Should merge all visible layers
+	
+	var cel = this.frames[ 0 ].cels[ 1 ] ;
+
 	var params = {
-		width: this.width ,
-		height: this.height ,
-		pixelBuffer: this.pixelBuffer
+		width: cel.width ,
+		height: cel.height ,
+		pixelBuffer: cel.pixelBuffer
 	} ;
+	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
 
 	switch ( this.colorType ) {
 		case Ase.COLOR_TYPE_RGBA :
@@ -267,21 +180,45 @@ Ase.prototype.toImage = function( PortableImageClass = PortableImage ) {
 
 
 
-
-
-
-
-
-
 // Sadly it should be async, because browser's Compression API works with streams
 Ase.prototype.decode = async function( buffer , options = {} ) {
 	var readableBuffer = new SequentialReadBuffer( buffer ) ;
 	this.decodeHeader( readableBuffer , options ) ;
-	
+
 	for ( let i = 0 ; i < this.frameCount ; i ++ ) {
 		let frame = new Frame( this ) ;
 		this.frames.push( frame ) ;
 		await frame.decode( readableBuffer ) ;
+	}
+
+	this.finalize() ;
+} ;
+
+
+
+Ase.prototype.decodeImage = async function( buffer , options = {} ) {
+	await this.decode( buffer , options ) ;
+	console.log( this ) ;
+	for ( let frame of this.frames ) { console.log( "Frame:" , frame ) ; }
+	return this.toImage( options.PortableImage ) ;
+} ;
+
+
+
+Ase.prototype.finalize = async function() {
+	if ( ! this.frames.length ) { return ; }
+
+	var firstFrame = this.frames[ 0 ] ;
+
+	if ( this.colorType === Ase.COLOR_TYPE_INDEXED ) {
+		this.palette = firstFrame.palette ;
+	}
+
+	for ( let frame of this.frames ) {
+		for ( let cel of frame.cels ) {
+			cel.frame = frame ;
+			cel.layer = frame.flattenLayers[ cel.layerIndex ] ;
+		}
 	}
 } ;
 
@@ -342,69 +279,17 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 
 
 
-Frame.prototype.decode = async function( readableBuffer , options = {} ) {
-	this.decodeHeader( readableBuffer , options ) ;
-
-	for ( let i = 0 ; i < this.chunkCount ; i ++ ) {
-		await this.decodeChunk( readableBuffer , options ) ;
-	}
-} ;
-
-
-
-Frame.prototype.decodeHeader = function( readableBuffer , options = {} ) {
-	var frameSize = readableBuffer.readUInt32LE() ;
-
-	var magicNumber = readableBuffer.readUInt16LE() ;
-	if ( magicNumber !== 0xf1fa ) {
-		throw new Error( "Bad frame, it doesn't start with ASE's frame magic numbers" ) ;
-	}
-
-	var chunkCount1 = readableBuffer.readUInt16LE() ;
-	this.duration = readableBuffer.readUInt16LE() ;
-	readableBuffer.skip( 2 ) ;
-	var chunkCount2 = readableBuffer.readUInt32LE() ;
-	
-	this.chunkCount = chunkCount2 === 0 ? ( chunkCount1 === 0xffff ? chunkCount2 : chunkCount1 ) : chunkCount2
-} ;
-
-
-
-Frame.prototype.decodeChunk = async function( readableBuffer , options = {} ) {
-	var chunkSize = readableBuffer.readUInt32LE() ;
-	var chunkType = readableBuffer.readUInt16LE() ;
-	var chunkBuffer = readableBuffer.readBufferView( chunkSize - 6 ) ;
-	
-	console.log( "Found chunk:" , chunkType.toString( 16 ) ) ;
-	if ( chunkDecoders[ chunkType ] ) {
-		await chunkDecoders[ chunkType ].call( this , new SequentialReadBuffer( chunkBuffer ) , options ) ;
-	}
-} ;
 
 
 
 
 
-
-
-
-
-
-
-
-
-Ase.prototype.decodeImage = async function( buffer , options = {} ) {
-	await this.decode( buffer , options ) ;
-	console.log( this ) ;
-	for ( let frame of this.frames ) { console.log( "Frame:" , frame ) ; }
-	return this.toImage( options.PortableImage ) ;
-} ;
 
 
 
 Ase.prototype.save = async function( url , options = {} ) {
 	var buffer = await this.encode( options ) ;
-	await saveFileAsync( url , buffer ) ;
+	await misc.saveFileAsync( url , buffer ) ;
 } ;
 
 
@@ -412,14 +297,14 @@ Ase.prototype.save = async function( url , options = {} ) {
 Ase.saveImage = async function( url , portableImage , options = {} ) {
 	var ase = Ase.fromImage( portableImage ) ;
 	var buffer = await ase.encode( options ) ;
-	await saveFileAsync( url , buffer ) ;
+	await misc.saveFileAsync( url , buffer ) ;
 } ;
 
 
 
 Ase.prototype.download = async function( filename , options = {} ) {
 	var buffer = await this.encode( options ) ;
-	await download( filename , buffer ) ;
+	await misc.download( filename , buffer ) ;
 } ;
 
 
@@ -517,6 +402,221 @@ Ase.prototype.generateChunkFromData = function( chunkType , dataBuffer ) {
 } ;
 
 
+}).call(this)}).call(this,require("buffer").Buffer)
+},{"./Cel.js":2,"./Frame.js":3,"./Layer.js":4,"./misc.js":5,"buffer":10,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],2:[function(require,module,exports){
+/*
+	Portable Image Ase
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+const misc = require( './misc.js' ) ;
+
+
+
+// They call "Cel" a single-layer image
+function Cel() {
+	Object.defineProperties( this , {
+		frame: { value: null , writable: true } ,
+		layer: { value: null , writable: true }
+	} ) ;
+
+	this.layerIndex = - 1 ;
+	this.width = - 1 ;
+	this.height = - 1 ;
+	this.x = 0 ;
+	this.y = 0 ;
+	this.zIndex = 0 ;
+	this.opacity = - 1 ;
+	this.type = - 1 ;
+
+	this.pixelBuffer = null ;
+
+	// Only relevant for linked cel (type=1)
+	this.linkedFrame = - 1 ;
+}
+
+module.exports = Cel ;
+
+const Ase = require( './Ase.js' ) ;
+
+
+
+Cel.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
+	var cel = this.frames[ 0 ].cels[ 1 ] ;
+
+	var params = {
+		width: cel.width ,
+		height: cel.height ,
+		pixelBuffer: cel.pixelBuffer
+	} ;
+	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
+
+	switch ( this.colorType ) {
+		case Ase.COLOR_TYPE_RGBA :
+			params.channels = PortableImageClass.RGBA ;
+			break ;
+		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
+			params.channels = [ 'gray' , 'alpha' ] ;
+			break ;
+		case Ase.COLOR_TYPE_INDEXED :
+			params.indexed = true ;
+			params.palette = this.palette ;
+			params.channels = PortableImageClass.RGBA ;
+			break ;
+	}
+
+	return new PortableImageClass( params ) ;
+} ;
+
+
+},{"./Ase.js":1,"./misc.js":5}],3:[function(require,module,exports){
+/*
+	Portable Image Ase
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+const misc = require( './misc.js' ) ;
+const SequentialReadBuffer = require( 'stream-kit/lib/SequentialReadBuffer.js' ) ;
+const SequentialWriteBuffer = require( 'stream-kit/lib/SequentialWriteBuffer.js' ) ;
+
+
+
+function Frame( ase ) {
+	Object.defineProperty( this , 'ase' , { value: ase } ) ;
+	this.chunkCount = - 1 ;
+	this.duration = ase.defaultFrameDuration ;	// in ms
+	this.palette = [] ;
+	this.flattenLayers = [] ;
+	this.cels = [] ;
+}
+
+module.exports = Frame ;
+
+const Ase = require( './Ase.js' ) ;
+const Layer = require( './Layer.js' ) ;
+const Cel = require( './Cel.js' ) ;
+
+
+
+Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
+	// Should merge all visible layers
+
+	var cel = this.frames[ 0 ].cels[ 1 ] ;
+
+	var params = {
+		width: cel.width ,
+		height: cel.height ,
+		pixelBuffer: cel.pixelBuffer
+	} ;
+	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
+
+	switch ( this.colorType ) {
+		case Ase.COLOR_TYPE_RGBA :
+			params.channels = PortableImageClass.RGBA ;
+			break ;
+		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
+			params.channels = [ 'gray' , 'alpha' ] ;
+			break ;
+		case Ase.COLOR_TYPE_INDEXED :
+			params.indexed = true ;
+			params.palette = this.palette ;
+			params.channels = PortableImageClass.RGBA ;
+			break ;
+	}
+
+	return new PortableImageClass( params ) ;
+} ;
+
+
+
+Frame.prototype.decode = async function( readableBuffer , options = {} ) {
+	this.decodeHeader( readableBuffer , options ) ;
+
+	for ( let i = 0 ; i < this.chunkCount ; i ++ ) {
+		await this.decodeChunk( readableBuffer , options ) ;
+	}
+} ;
+
+
+
+Frame.prototype.decodeHeader = function( readableBuffer , options = {} ) {
+	var frameSize = readableBuffer.readUInt32LE() ;
+
+	var magicNumber = readableBuffer.readUInt16LE() ;
+	if ( magicNumber !== 0xf1fa ) {
+		throw new Error( "Bad frame, it doesn't start with ASE's frame magic numbers" ) ;
+	}
+
+	var chunkCount1 = readableBuffer.readUInt16LE() ;
+	this.duration = readableBuffer.readUInt16LE() ;
+	readableBuffer.skip( 2 ) ;
+	var chunkCount2 = readableBuffer.readUInt32LE() ;
+
+	this.chunkCount = chunkCount2 === 0 ? ( chunkCount1 === 0xffff ? chunkCount2 : chunkCount1 ) : chunkCount2 ;
+} ;
+
+
+
+Frame.prototype.decodeChunk = async function( readableBuffer , options = {} ) {
+	var chunkSize = readableBuffer.readUInt32LE() ;
+	var chunkType = readableBuffer.readUInt16LE() ;
+	var chunkBuffer = readableBuffer.readBufferView( chunkSize - 6 ) ;
+
+	console.log( "Found chunk:" , chunkType.toString( 16 ) ) ;
+	if ( chunkDecoders[ chunkType ] ) {
+		await chunkDecoders[ chunkType ].call( this , new SequentialReadBuffer( chunkBuffer ) , options ) ;
+	}
+} ;
+
+
 
 const chunkDecoders = {} ;
 const chunkEncoders = {} ;
@@ -524,7 +624,7 @@ const chunkEncoders = {} ;
 // Old palette chunk, but still used for palette without alpha
 chunkDecoders[ 0x0004 ] = function( readableBuffer , options ) {
 	var packets = readableBuffer.readUInt16LE() ;
-	
+
 	for ( let i = 0 ; i < packets ; i ++ ) {
 		let skipColors = readableBuffer.readUInt8() ;
 		let colorsInPacket = readableBuffer.readUInt8() ;
@@ -535,7 +635,7 @@ chunkDecoders[ 0x0004 ] = function( readableBuffer , options ) {
 				readableBuffer.readUInt8() ,
 				readableBuffer.readUInt8() ,
 				readableBuffer.readUInt8() ,
-				255
+				this.ase.colorType === Ase.COLOR_TYPE_INDEXED && this.ase.transparencyColorIndex === index ? 0 : 255
 			] ;
 		}
 	}
@@ -553,8 +653,8 @@ chunkDecoders[ 0x2019 ] = function( readableBuffer , options ) {
 	var firstIndex = readableBuffer.readUInt32LE() ;
 	var lastIndex = readableBuffer.readUInt32LE() ;
 	readableBuffer.skip( 8 ) ;
-	
-	for ( let index = 0 ; index <= lastIndex ; index ++ ) {
+
+	for ( let index = firstIndex ; index <= lastIndex ; index ++ ) {
 		let flags = readableBuffer.readUInt16LE() ;
 		this.palette[ index ] = [
 			readableBuffer.readUInt8() ,
@@ -575,7 +675,7 @@ chunkDecoders[ 0x2019 ] = function( readableBuffer , options ) {
 // Layer
 chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 	var layer = new Layer() ;
-	this.layers.push( layer ) ;
+	this.flattenLayers.push( layer ) ;
 
 	/*
 		Flags:
@@ -606,7 +706,7 @@ chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 
 	layer.childLevel = readableBuffer.readUInt16LE() ;
 	readableBuffer.skip( 4 ) ;	// the doc says that default layer width/height are ignored
-	
+
 	/*
 		Blend modes:
 		Normal         = 0
@@ -633,13 +733,13 @@ chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 
 	layer.opacity = readableBuffer.readUInt8() ;
 	readableBuffer.skip( 3 ) ;	// reserved
-	
+
 	layer.name = readableBuffer.readLps16LEUtf8() ;
-	
+
 	if ( layer.type === 2 ) {
 		layer.tilesetIndex = readableBuffer.readUInt32LE() ;
 	}
-	
+
 	console.log( "Layer:" , layer ) ;
 } ;
 
@@ -685,17 +785,22 @@ chunkDecoders[ 0x2005 ] = async function( readableBuffer , options ) {
 
 	// Raw image
 	if ( cel.type === 0 ) {
-		let byteLength = cel.width * cel.height * this.parent.bitsPerPixel / 8 ;
+		let byteLength = cel.width * cel.height * this.ase.bitsPerPixel / 8 ;
 		cel.pixelBuffer = readableBuffer.readBufferView( byteLength ) ;
 	}
 
 	// Compressed image
 	if ( cel.type === 2 ) {
-		let expectedByteLength = cel.width * cel.height * this.parent.bitsPerPixel / 8 ;
+		let expectedByteLength = cel.width * cel.height * this.ase.bitsPerPixel / 8 ;
 		let compressedBuffer = readableBuffer.readBufferView( - 1 ) ;
-		let uncompressedBuffer = await inflate( compressedBuffer ) ;
-		//console.log( "uncompressedBuffer:" , expectedByteLength , uncompressedBuffer.length , uncompressedBuffer ) ;
-		cel.pixelBuffer = uncompressedBuffer ;
+		let decompressedBuffer = await misc.inflate( compressedBuffer ) ;
+
+		if ( decompressedBuffer.length !== expectedByteLength ) {
+			throw new Error( "Expected decompressed buffer to have size of " + expectedByteLength + " but got: " + decompressedBuffer.length ) ;
+		}
+
+		//console.log( "decompressedBuffer:" , expectedByteLength , decompressedBuffer.length , decompressedBuffer ) ;
+		cel.pixelBuffer = decompressedBuffer ;
 	}
 
 	console.log( "Cel:" , cel ) ;
@@ -707,136 +812,144 @@ chunkDecoders[ 0x2007 ] = function( readableBuffer , options ) {
 } ;
 
 
-chunkDecoders.IHDR = function( readableBuffer , options ) {
-	this.width = readableBuffer.readUInt32BE() ;
-	this.height = readableBuffer.readUInt32BE() ;
-	this.bitDepth = readableBuffer.readUInt8() ;
-	this.colorType = readableBuffer.readUInt8() ;
-	this.compressionMethod = readableBuffer.readUInt8() ;
-	this.filterMethod = readableBuffer.readUInt8() ;
-	this.interlaceMethod = readableBuffer.readUInt8() ;
+},{"./Ase.js":1,"./Cel.js":2,"./Layer.js":4,"./misc.js":5,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],4:[function(require,module,exports){
+/*
+	Portable Image Ase
 
-	this.computeBitsPerPixel() ;
+	Copyright (c) 2024 Cédric Ronvel
 
-	//console.log( "After IHDR:" , this ) ;
-} ;
+	The MIT License (MIT)
 
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
 
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
 
-chunkEncoders.IHDR = function( options ) {
-	let writableBuffer = new SequentialWriteBuffer( 13 ) ;
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
 
-	writableBuffer.writeUInt32BE( this.width ) ;
-	writableBuffer.writeUInt32BE( this.height ) ;
-	writableBuffer.writeUInt8( this.bitDepth ) ;
-	writableBuffer.writeUInt8( this.colorType ) ;
-	writableBuffer.writeUInt8( this.compressionMethod ) ;
-	writableBuffer.writeUInt8( this.filterMethod ) ;
-	writableBuffer.writeUInt8( this.interlaceMethod ) ;
-
-	return writableBuffer.getBuffer( true ) ;
-} ;
-
+"use strict" ;
 
 
-chunkDecoders.IDAT = function( readableBuffer , options ) {
-	this.idatBuffers.push( readableBuffer.buffer ) ;
-	//console.log( "Raw IDAT:" , readableBuffer.buffer , readableBuffer.buffer.length ) ;
-} ;
+//const misc = require( './misc.js' ) ;
 
 
 
-chunkEncoders.IDAT = async function( options ) {
-	if ( ! this.pixelBuffer ) { return ; }
+function Layer() {
+	this.visible = true ;
+	this.type = - 1 ;
+	this.childLevel = - 1 ;
+	this.blendMode = - 1 ;
+	this.opacity = - 1 ;
+	this.name = '' ;
+	this.tilesetIndex = - 1 ;
+}
 
-	//if ( this.colorType !== Ase.COLOR_TYPE_INDEXED ) { throw new Error( "Unsupported color type for IDAT: " + this.colorType ) ; }
+module.exports = Layer ;
 
-	if ( this.interlaceMethod ) {
-		throw new Error( "Interlace methods are unsupported (IDAT): " + this.interlaceMethod ) ;
-	}
 
-	//console.log( "Creating IDAT with bits per pixel / bit depth: " + this.bitsPerPixel + " / " + this.bitDepth ) ;
+},{}],5:[function(require,module,exports){
+(function (process,Buffer){(function (){
+/*
+	Portable Image Ase
 
-	var pixelBufferLineByteLength = this.width * this.decodedBytesPerPixel ;
-	var lineByteLength = 1 + Math.ceil( this.width * this.bitsPerPixel / 8 ) ;
-	var writableBuffer = new SequentialWriteBuffer( this.palette.length * 3 ) ;
+	Copyright (c) 2024 Cédric Ronvel
 
-	// Prepare the PNG buffer, using only filter 0 and no Adam7, we just want it to work
-	for ( let y = 0 ; y < this.height ; y ++ ) {
-		// We don't care for filters ATM, it requires heuristic, it's boring to do...
-		writableBuffer.writeUInt8( 0 ) ;
+	The MIT License (MIT)
 
-		if ( this.bitsPerPixel >= 8 ) {
-			writableBuffer.writeBuffer( this.pixelBuffer , y * pixelBufferLineByteLength , ( y + 1 ) * pixelBufferLineByteLength ) ;
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+// ASE/ASEPRITE file loader/saver.
+// See: https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
+
+const SequentialReadBuffer = require( 'stream-kit/lib/SequentialReadBuffer.js' ) ;
+const SequentialWriteBuffer = require( 'stream-kit/lib/SequentialWriteBuffer.js' ) ;
+
+var DecompressionStream = null ;
+var CompressionStream = null ;
+
+// Includes depending on the environment
+const require_ = require ;	// this is used to fool Browserfify, so it doesn't try to include this in the build
+
+if ( process.browser ) {
+	exports.PortableImage = window.PortableImage ;
+	if ( ! exports.PortableImage ) {
+		try {
+			exports.PortableImage = require( 'portable-image' ) ;
 		}
-		else {
-			for ( let x = 0 ; x < this.width ; x ++ ) {
-				writableBuffer.writeUBits( this.pixelBuffer[ y * pixelBufferLineByteLength + x ] , this.bitsPerPixel ) ;
-			}
+		catch ( error ) {}
+	}
+
+	DecompressionStream = window.DecompressionStream ;
+	CompressionStream = window.CompressionStream ;
+	exports.loadFileAsync = async ( url ) => {
+		var response = await fetch( url ) ;
+		if ( ! response.ok ) {
+			throw new Error( "Can't retrieve file: '" + url + "', " + response.status + " - " + response.statusText ) ;
 		}
+		var bytes = await response.bytes() ;
+		var buffer = Buffer.from( bytes ) ;
+		return buffer ;
+	} ;
+	exports.saveFileAsync = () => { throw new Error( "Can't save from browser (use .download() instead)" ) ; } ;
+	exports.download = ( filename , buffer ) => {
+		var anchor = window.document.createElement( 'a' ) ;
+		anchor.href = window.URL.createObjectURL( new Blob( [ buffer ] , { type: 'application/octet-stream' } ) ) ;
+		anchor.download = filename ;
+
+		// Force a click to start downloading, even if the anchor is not even appended to the body
+		anchor.click() ;
+	} ;
+}
+else {
+	( { DecompressionStream , CompressionStream } = require_( 'stream/web' ) ) ;
+
+	try {
+		exports.PortableImage = require( 'portable-image' ) ;
 	}
+	catch ( error ) {}
 
-	var compressedBuffer = await deflate( writableBuffer.getBuffer( true ) ) ;
-	//console.log( "Compressed IDAT:" , compressedBuffer , compressedBuffer.length ) ;
-
-	return compressedBuffer ;
-} ;
-
-
-
-Ase.prototype.generateImageData = async function() {
-	if ( this.interlaceMethod ) {
-		throw new Error( "Interlace methods are unsupported (IDAT): " + this.interlaceMethod ) ;
-	}
-
-	this.pixelBuffer = Buffer.allocUnsafe( this.width * this.height * this.decodedBytesPerPixel ) ;
-
-	var compressedBuffer = Buffer.concat( this.idatBuffers ) ;
-	var buffer = await inflate( compressedBuffer ) ;
-	//console.log( "Decompressed IDAT:" , buffer , buffer.length ) ;
-
-	var lineByteLength = 1 + Math.ceil( this.width * this.bitsPerPixel / 8 ) ;
-	var expectedBufferLength = lineByteLength * this.height ;
-	var pixelBufferLineByteLength = this.width * this.decodedBytesPerPixel ;
-
-	if ( expectedBufferLength !== buffer.length ) {
-		throw new Error( "Expecting a decompressed buffer of length of " + expectedBufferLength + " but got: " + buffer.length ) ;
-	}
-
-	//console.log( "lineByteLength:" , lineByteLength ) ;
-	for ( let y = 0 ; y < this.height ; y ++ ) {
-		this.decodeLineFilter( buffer , y * lineByteLength , ( y + 1 ) * lineByteLength , ( y - 1 ) * lineByteLength ) ;	// Note: negative number = no previous line
-		this.extractLine( buffer , y * lineByteLength + 1 , lineByteLength - 1 , y * pixelBufferLineByteLength ) ;
-	}
-
-	//console.log( "pixelBuffer:" , this.pixelBuffer , this.pixelBuffer.length ) ;
-} ;
+	let fs = require_( 'fs' ) ;
+	exports.loadFileAsync = url => fs.promises.readFile( url ) ;
+	exports.saveFileAsync = ( url , data ) => fs.promises.writeFile( url , data ) ;
+	exports.download = () => { throw new Error( "Can't download from non-browser (use .saveFileAsync() instead)" ) ; } ;
+}
 
 
 
-Ase.prototype.computeBitsPerPixel = function() {
-	switch ( this.colorType ) {
-		case Ase.COLOR_TYPE_GRAYSCALE :
-		case Ase.COLOR_TYPE_INDEXED :
-			this.bitsPerPixel = this.bitDepth ;
-			break ;
-		case Ase.COLOR_TYPE_RGB :
-			this.bitsPerPixel = this.bitDepth * 3 ;
-			break ;
-		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
-			this.bitsPerPixel = this.bitDepth * 2 ;
-			break ;
-		case Ase.COLOR_TYPE_RGBA :
-			this.bitsPerPixel = this.bitDepth * 4 ;
-			break ;
-	}
-
-	this.decodedBytesPerPixel = Math.ceil( this.bitsPerPixel / 8 ) ;
-} ;
-
-
-
-async function inflate( buffer ) {
+exports.inflate = async ( buffer ) => {
 	const decompressionStream = new DecompressionStream( 'deflate' ) ;
 	const blob = new Blob( [ buffer ] ) ;
 	const stream = blob.stream().pipeThrough( decompressionStream ) ;
@@ -851,7 +964,7 @@ async function inflate( buffer ) {
 
 
 
-async function deflate( buffer ) {
+exports.deflate = async ( buffer ) => {
 	const compressionStream = new CompressionStream( 'deflate' ) ;
 	const blob = new Blob( [ buffer ] ) ;
 	const stream = blob.stream().pipeThrough( compressionStream ) ;
@@ -866,7 +979,7 @@ async function deflate( buffer ) {
 
 
 }).call(this)}).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":8,"buffer":6,"portable-image":4,"stream-kit/lib/SequentialReadBuffer.js":2,"stream-kit/lib/SequentialWriteBuffer.js":3}],2:[function(require,module,exports){
+},{"_process":12,"buffer":10,"portable-image":8,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],6:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1276,7 +1389,7 @@ SequentialReadBuffer.prototype.readUBitsBE = function( bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":6}],3:[function(require,module,exports){
+},{"buffer":10}],7:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1724,9 +1837,9 @@ SequentialWriteBuffer.prototype.writeUBitsBE = function( v , bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":6}],4:[function(require,module,exports){
+},{"buffer":10}],8:[function(require,module,exports){
 
-},{}],5:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -1878,7 +1991,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],6:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -3659,7 +3772,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":5,"buffer":6,"ieee754":7}],7:[function(require,module,exports){
+},{"base64-js":9,"buffer":10,"ieee754":11}],11:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -3746,7 +3859,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],8:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
