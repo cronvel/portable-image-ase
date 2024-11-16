@@ -93,7 +93,6 @@ else {
 
 function Ase() {
 	// Header data
-
 	this.width = - 1 ;
 	this.height = - 1 ;
 	this.frameCount = - 1 ;
@@ -102,7 +101,7 @@ function Ase() {
 
 	this.flags = - 1 ;
 	this.defaultFrameDuration = - 1 ;
-	this.transparencyColorIndex = null ;	// transperency index, only for indexed mode
+	this.transparencyColorIndex = null ;	// transparency index, only for indexed mode
 	this.colorCount = - 1 ;
 	this.pixelWidth = - 1 ;
 	this.pixelHeight = - 1 ;
@@ -112,16 +111,8 @@ function Ase() {
 	this.gridWidth = - 1 ;
     this.gridHeight = - 1 ;
     
-    
-    // Frame data
-    
+    // Frames data
     this.frames = [] ;
-	
-	
-	// ----
-
-	this.palette = [] ;
-	this.pixelBuffer = null ;
 }
 
 module.exports = Ase ;
@@ -130,19 +121,51 @@ Ase.PortableImage = PortableImage ;
 
 
 
-function Frame( duration ) {
-	// Header data
-
+function Frame( parent ) {
+	Object.defineProperty( this , 'parent' , { value: parent } ) ;
 	this.chunkCount = - 1 ;
-	this.duration = duration ;	// in ms
-	
-	// ----
-
+	this.duration = parent.defaultFrameDuration ;	// in ms
 	this.palette = [] ;
-	this.pixelBuffer = null ;
+	this.layers = [] ;
+	this.cels = [] ;
 }
 
 Ase.Frame = Frame ;
+
+
+
+function Layer() {
+	this.visible = true ;
+	this.type = - 1 ;
+	this.childLevel = - 1 ;
+	this.blendMode = - 1 ;
+	this.opacity = - 1 ;
+	this.name = '' ;
+	this.tilesetIndex = - 1 ;
+}
+
+Ase.Layer = Layer ;
+
+
+
+// They call "Cel" a single-layer image
+function Cel() {
+	this.layerIndex = - 1 ;
+	this.width = - 1 ;
+	this.height = - 1 ;
+	this.x = 0 ;
+	this.y = 0 ;
+	this.zIndex = 0 ;
+	this.opacity = - 1 ;
+	this.type = - 1 ;
+	
+	this.pixelBuffer = null ;
+
+	// Only relevant for linked cel (type=1)
+	this.linkedFrame = - 1 ;
+}
+
+Ase.Cel = Cel ;
 
 
 
@@ -185,26 +208,11 @@ Ase.createEncoder = ( params = {} ) => {
 
 
 
-// PNG constants
+// ASE constants
 
 Ase.COLOR_TYPE_RGBA = 0 ;
 Ase.COLOR_TYPE_GRAYSCALE_ALPHA = 1 ;
 Ase.COLOR_TYPE_INDEXED = 2 ;
-
-
-
-// Chunk/Buffer constants
-
-const CHUNK_META_SIZE = 12 ;
-// A PNG file always starts with this bytes
-const PNG_MAGIC_NUMBERS = [ 0x89 , 0x50 , 0x4E , 0x47 , 0x0D , 0x0A , 0x1A , 0x0A ] ;
-const PNG_MAGIC_NUMBERS_BUFFER = Buffer.from( PNG_MAGIC_NUMBERS ) ;
-const IEND_CHUNK = [	// Instead of triggering the whole chunk machinery, just put this pre-computed IEND chunk
-	0x00 , 0x00 , 0x00 , 0x00 ,		// Zero-length
-	0x49 , 0x45 , 0x4e , 0x44 ,		// IEND
-	0xae , 0x42 , 0x60 , 0x82		// CRC-32 of IEND
-] ;
-const IEND_CHUNK_BUFFER = Buffer.from( IEND_CHUNK ) ;
 
 
 
@@ -241,14 +249,8 @@ Ase.prototype.toImage = function( PortableImageClass = PortableImage ) {
 	} ;
 
 	switch ( this.colorType ) {
-		case Ase.COLOR_TYPE_RGB :
-			params.channels = PortableImageClass.RGB ;
-			break ;
 		case Ase.COLOR_TYPE_RGBA :
 			params.channels = PortableImageClass.RGBA ;
-			break ;
-		case Ase.COLOR_TYPE_GRAYSCALE :
-			params.channels = [ 'gray' ] ;
 			break ;
 		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
 			params.channels = [ 'gray' , 'alpha' ] ;
@@ -277,7 +279,7 @@ Ase.prototype.decode = async function( buffer , options = {} ) {
 	this.decodeHeader( readableBuffer , options ) ;
 	
 	for ( let i = 0 ; i < this.frameCount ; i ++ ) {
-		let frame = new Frame( this.defaultFrameDuration ) ;
+		let frame = new Frame( this ) ;
 		this.frames.push( frame ) ;
 		await frame.decode( readableBuffer ) ;
 	}
@@ -371,7 +373,7 @@ Frame.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 Frame.prototype.decodeChunk = async function( readableBuffer , options = {} ) {
 	var chunkSize = readableBuffer.readUInt32LE() ;
 	var chunkType = readableBuffer.readUInt16LE() ;
-	var chunkBuffer = readableBuffer.readBuffer( chunkSize - 6 , true ) ;
+	var chunkBuffer = readableBuffer.readBufferView( chunkSize - 6 ) ;
 	
 	console.log( "Found chunk:" , chunkType.toString( 16 ) ) ;
 	if ( chunkDecoders[ chunkType ] ) {
@@ -459,7 +461,7 @@ Ase.prototype.encode = async function( options = {} ) {
 	var chunks = [] ;
 
 	// Add magic numbers
-	chunks.push( PNG_MAGIC_NUMBERS_BUFFER ) ;
+	//chunks.push( PNG_MAGIC_NUMBERS_BUFFER ) ;
 
 	// IHDR: image header
 	await this.addChunk( chunks , 'IHDR' , options ) ;
@@ -572,6 +574,9 @@ chunkDecoders[ 0x2019 ] = function( readableBuffer , options ) {
 
 // Layer
 chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
+	var layer = new Layer() ;
+	this.layers.push( layer ) ;
+
 	/*
 		Flags:
 		1 = Visible
@@ -583,10 +588,10 @@ chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 		64 = The layer is a reference layer
 	*/
 	var flags = readableBuffer.readUInt16LE() ;
-	var visible = !! ( flags & 1 ) ;
+	layer.visible = !! ( flags & 1 ) ;
 
-	var type = readableBuffer.readUInt16LE() ;
-	switch ( type ) {
+	layer.type = readableBuffer.readUInt16LE() ;
+	switch ( layer.type ) {
 		case 0 :
 			// Normal
 			break ;
@@ -599,7 +604,7 @@ chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 			break ;
 	}
 
-	var childLevel = readableBuffer.readUInt16LE() ;
+	layer.childLevel = readableBuffer.readUInt16LE() ;
 	readableBuffer.skip( 4 ) ;	// the doc says that default layer width/height are ignored
 	
 	/*
@@ -624,18 +629,76 @@ chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 		Subtract       = 17
 		Divide         = 18
 	*/
-	var blendMode = readableBuffer.readUInt16LE() ;
+	layer.blendMode = readableBuffer.readUInt16LE() ;
 
-	var opacity = readableBuffer.readUInt8() ;
+	layer.opacity = readableBuffer.readUInt8() ;
 	readableBuffer.skip( 3 ) ;	// reserved
 	
-	var name = readableBuffer.readLps16LEUtf8() ;
+	layer.name = readableBuffer.readLps16LEUtf8() ;
 	
-	if ( type === 2 ) {
-		let tilesetIndex = readableBuffer.readUInt32LE() ;
+	if ( layer.type === 2 ) {
+		layer.tilesetIndex = readableBuffer.readUInt32LE() ;
 	}
 	
-	console.log( "Layer:" , { name , type , visible , childLevel , blendMode } ) ;
+	console.log( "Layer:" , layer ) ;
+} ;
+
+
+// Cel (single-layer image)
+chunkDecoders[ 0x2005 ] = async function( readableBuffer , options ) {
+	var cel = new Cel() ;
+	this.cels.push( cel ) ;
+
+	cel.layerIndex = readableBuffer.readUInt16LE() ;
+	cel.x = readableBuffer.readInt16LE() ;
+	cel.y = readableBuffer.readInt16LE() ;
+	cel.opacity = readableBuffer.readUInt8() ;
+
+	/*
+		Cel Type
+		0 - Raw Image Data (unused, compressed image is preferred)
+		1 - Linked Cel
+		2 - Compressed Image
+		3 - Compressed Tilemap
+	*/
+	cel.type = readableBuffer.readUInt16LE() ;
+
+	// z-index is really strange, the real z-index is in fact: layerIndex + zIndex, if equal, zIndex prevails
+	cel.zIndex = readableBuffer.readInt16LE() ;
+
+	readableBuffer.skip( 5 ) ;	// reserved
+
+	// Linked Cel
+	if ( cel.type === 1 ) {
+		cel.linkedFrame = readableBuffer.readUInt16LE() ;
+		return ;
+	}
+
+	// Tilemap
+	if ( cel.type === 3 ) {
+		console.log( "Tilemap is unsupported ATM" ) ;
+		return ;
+	}
+
+	cel.width = readableBuffer.readUInt16LE() ;
+	cel.height = readableBuffer.readUInt16LE() ;
+
+	// Raw image
+	if ( cel.type === 0 ) {
+		let byteLength = cel.width * cel.height * this.parent.bitsPerPixel / 8 ;
+		cel.pixelBuffer = readableBuffer.readBufferView( byteLength ) ;
+	}
+
+	// Compressed image
+	if ( cel.type === 2 ) {
+		let expectedByteLength = cel.width * cel.height * this.parent.bitsPerPixel / 8 ;
+		let compressedBuffer = readableBuffer.readBufferView( - 1 ) ;
+		let uncompressedBuffer = await inflate( compressedBuffer ) ;
+		//console.log( "uncompressedBuffer:" , expectedByteLength , uncompressedBuffer.length , uncompressedBuffer ) ;
+		cel.pixelBuffer = uncompressedBuffer ;
+	}
+
+	console.log( "Cel:" , cel ) ;
 } ;
 
 
@@ -872,9 +935,12 @@ SequentialReadBuffer.prototype.skip = function( byteLength ) {
 
 
 
+// If byteLength=-1, read the remaining bytes
 SequentialReadBuffer.prototype.readBuffer = function( byteLength , view = false ) {
 	this.remainingBits = this.currentBitByte = 0 ;
 	var buffer ;
+
+	if ( byteLength === - 1 ) { byteLength = this.buffer.length - this.ptr ; }
 
 	if ( view ) {
 		buffer = this.buffer.slice( this.ptr , this.ptr + byteLength ) ;
@@ -887,6 +953,8 @@ SequentialReadBuffer.prototype.readBuffer = function( byteLength , view = false 
 	this.ptr += byteLength ;
 	return buffer ;
 } ;
+
+SequentialReadBuffer.prototype.readBufferView = function( byteLength ) { return this.readBuffer( byteLength , true ) ; } ;
 
 
 
