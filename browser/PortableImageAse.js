@@ -150,32 +150,8 @@ Ase.decodeImage = function( buffer , options = {} ) {
 
 
 Ase.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	// Should merge all visible layers
-	
 	var cel = this.frames[ 0 ].cels[ 1 ] ;
-
-	var params = {
-		width: cel.width ,
-		height: cel.height ,
-		pixelBuffer: cel.pixelBuffer
-	} ;
-	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
-
-	switch ( this.colorType ) {
-		case Ase.COLOR_TYPE_RGBA :
-			params.channels = PortableImageClass.RGBA ;
-			break ;
-		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
-			params.channels = [ 'gray' , 'alpha' ] ;
-			break ;
-		case Ase.COLOR_TYPE_INDEXED :
-			params.indexed = true ;
-			params.palette = this.palette ;
-			params.channels = PortableImageClass.RGBA ;
-			break ;
-	}
-
-	return new PortableImageClass( params ) ;
+	return cel.toImage( PortableImageClass ) ;
 } ;
 
 
@@ -216,6 +192,7 @@ Ase.prototype.finalize = async function() {
 
 	for ( let frame of this.frames ) {
 		for ( let cel of frame.cels ) {
+			cel.ase = this ;
 			cel.frame = frame ;
 			cel.layer = frame.flattenLayers[ cel.layerIndex ] ;
 		}
@@ -440,6 +417,7 @@ const misc = require( './misc.js' ) ;
 // They call "Cel" a single-layer image
 function Cel() {
 	Object.defineProperties( this , {
+		ase: { value: null , writable: true } ,
 		frame: { value: null , writable: true } ,
 		layer: { value: null , writable: true }
 	} ) ;
@@ -466,16 +444,14 @@ const Ase = require( './Ase.js' ) ;
 
 
 Cel.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	var cel = this.frames[ 0 ].cels[ 1 ] ;
-
 	var params = {
-		width: cel.width ,
-		height: cel.height ,
-		pixelBuffer: cel.pixelBuffer
+		width: this.width ,
+		height: this.height ,
+		pixelBuffer: this.pixelBuffer
 	} ;
-	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
+	console.warn( "pixelBuffer:" , this.width , this.height , this.pixelBuffer ) ;
 
-	switch ( this.colorType ) {
+	switch ( this.ase.colorType ) {
 		case Ase.COLOR_TYPE_RGBA :
 			params.channels = PortableImageClass.RGBA ;
 			break ;
@@ -484,7 +460,7 @@ Cel.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
 			break ;
 		case Ase.COLOR_TYPE_INDEXED :
 			params.indexed = true ;
-			params.palette = this.palette ;
+			params.palette = this.ase.palette ;
 			params.channels = PortableImageClass.RGBA ;
 			break ;
 	}

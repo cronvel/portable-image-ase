@@ -150,9 +150,8 @@ Ase.decodeImage = function( buffer , options = {} ) {
 
 
 Ase.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	// Should merge all visible layers
-	
 	var cel = this.frames[ 0 ].cels[ 1 ] ;
+	//return cel.toImage( PortableImageClass ) ;
 
 	var params = {
 		width: cel.width ,
@@ -466,14 +465,12 @@ const Ase = require( './Ase.js' ) ;
 
 
 Cel.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	var cel = this.frames[ 0 ].cels[ 1 ] ;
-
 	var params = {
-		width: cel.width ,
-		height: cel.height ,
-		pixelBuffer: cel.pixelBuffer
+		width: this.width ,
+		height: this.height ,
+		pixelBuffer: this.pixelBuffer
 	} ;
-	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
+	console.warn( "pixelBuffer:" , this.width , this.height , this.pixelBuffer ) ;
 
 	switch ( this.colorType ) {
 		case Ase.COLOR_TYPE_RGBA :
