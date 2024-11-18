@@ -539,15 +539,14 @@ Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
 	var params = this.ase.getPortableImageParams( PortableImageClass ) ;
 	var portableImage = new PortableImageClass( params ) ;
 	
-	portableImage = this.cels[ 1 ].toImage( PortableImageClass ) ;
-	let celPortableImage = this.cels[ 1 ].toImage( PortableImageClass ) ;
-	celPortableImage.copyTo( portableImage ) ;
-	return portableImage ;
-
 	for ( let cel of this.cels ) {
 		if ( ! cel.layer.visible ) { continue ; }
 		let celPortableImage = cel.toImage( PortableImageClass ) ;
-		celPortableImage.copyTo( portableImage ) ;
+		celPortableImage.copyTo( portableImage , {
+			compositing: PortableImageClass.compositing.binaryOver ,
+			x: cel.x ,
+			y: cel.y
+		} ) ;
 		console.log( "Copy from/to:" , portableImage , celPortableImage ) ;
 	}
 	
@@ -2028,6 +2027,8 @@ MatrixChannelMapping.prototype.compose = function( src , dst , iSrc , iDst , com
 	Should come after prototype definition, because of *.prototype = Object.create(...)
 */
 
+Mapping.INDEXED_TO_INDEXED = new DirectChannelMapping( [ 0 ] ) ;
+
 Mapping.RGBA_COMPATIBLE_TO_RGBA = new DirectChannelMapping( [ 0 , 1 , 2 , 3 ] , 3 ) ;
 
 Mapping.RGB_COMPATIBLE_TO_RGBA = new DirectChannelMappingWithDefault(
@@ -2266,6 +2267,23 @@ PortableImage.prototype.setPaletteColor = function( index , color ) {
 
 
 
+PortableImage.prototype.hasSamePalette = function( portableImage ) {
+	if ( ! this.palette || ! portableImage.palette ) { return false ; }
+	if ( this.palette.length !== portableImage.palette.length ) { return false ; }
+
+	for ( let index = 0 ; index < this.palette.length ; index ++ ) {
+		let values = this.palette[ index ] ;
+
+		for ( let c = 0 ; c < values.length ; c ++ ) {
+			if ( values[ c ] !== portableImage.palette[ index ][ c ] ) { return false ; }
+		}
+	}
+
+	return true ;
+} ;
+
+
+
 /*
 	Copy to another PortableImage instance.
 */
@@ -2309,19 +2327,48 @@ PortableImage.prototype.copyTo = function( portableImage , params = {} ) {
 
 	if ( src.compositing ) {
 		if ( this.indexed ) {
-			src.palette = this.palette ;
-			PortableImage.indexedCompositingBlit( src , dst ) ;
+			if ( portableImage.indexed ) {
+				if ( ! this.hasSamePalette( portableImage ) ) {
+					throw new Error( "Uncompatible palettes are not supported yet" ) ;
+				}
+
+				src.palette = this.palette ;
+
+				if ( src.compositing.id === 'binaryOver' && this.channelIndex.alpha !== undefined ) {
+					src.alphaChannel = this.channelIndex.alpha ;
+					PortableImage.transparencyBlitFromIndexedToIndexed( src , dst ) ;
+				}
+				else {
+					throw new Error( "Copy indexed to indexed with compositing is not supported yet, except for 'binaryOver' mode" ) ;
+				}
+			}
+			else {
+				src.palette = this.palette ;
+				PortableImage.compositingBlitFromIndexed( src , dst ) ;
+			}
 		}
 		else {
+			if ( portableImage.indexed ) { throw new Error( "Copy to indexed portable image is not supported yet" ) ; }
 			PortableImage.compositingBlit( src , dst ) ;
 		}
 	}
 	else {
 		if ( this.indexed ) {
-			src.palette = this.palette ;
-			PortableImage.indexedBlit( src , dst ) ;
+			if ( portableImage.indexed ) {
+				if ( ! this.hasSamePalette( portableImage ) ) {
+					throw new Error( "Uncompatible palettes are not supported yet" ) ;
+				}
+
+				src.mapping = Mapping.INDEXED_TO_INDEXED ;
+				PortableImage.blit( src , dst ) ;
+			}
+			else {
+				src.palette = this.palette ;
+				PortableImage.blitFromIndexed( src , dst ) ;
+			}
 		}
 		else {
+			if ( portableImage.indexed ) { throw new Error( "Copy to indexed portable image is not supported yet" ) ; }
 			PortableImage.blit( src , dst ) ;
 		}
 	}
@@ -2397,7 +2444,7 @@ PortableImage.prototype.updateImageData = function( imageData , params = {} ) {
 	if ( src.compositing ) {
 		if ( this.indexed ) {
 			src.palette = this.palette ;
-			PortableImage.indexedCompositingBlit( src , dst ) ;
+			PortableImage.compositingBlitFromIndexed( src , dst ) ;
 		}
 		else {
 			PortableImage.compositingBlit( src , dst ) ;
@@ -2406,7 +2453,7 @@ PortableImage.prototype.updateImageData = function( imageData , params = {} ) {
 	else {
 		if ( this.indexed ) {
 			src.palette = this.palette ;
-			PortableImage.indexedBlit( src , dst ) ;
+			PortableImage.blitFromIndexed( src , dst ) ;
 		}
 		else {
 			PortableImage.blit( src , dst ) ;
@@ -2454,8 +2501,8 @@ PortableImage.blit = function( src , dst ) {
 	src only:
 		* palette: an array of array of values
 */
-PortableImage.indexedBlit = function( src , dst ) {
-	console.warn( ".indexedBlit() used" , src , dst ) ;
+PortableImage.blitFromIndexed = function( src , dst ) {
+	console.warn( ".blitFromIndexed() used" , src , dst ) ;
 	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
 		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
 		channels = Math.floor( src.mapping.length / 2 ) ;
@@ -2505,8 +2552,8 @@ PortableImage.compositingBlit = function( src , dst ) {
 		* palette: an array of array of values
 		* compositing: a compositing object, having a method "alpha" and "channel"
 */
-PortableImage.indexedCompositingBlit = function( src , dst ) {
-	//console.warn( ".indexedCompositingBlit() used" , src , dst ) ;
+PortableImage.compositingBlitFromIndexed = function( src , dst ) {
+	//console.warn( ".compositingBlitFromIndexed() used" , src , dst ) ;
 	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
 		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
 		channels = Math.floor( src.mapping.length / 2 ) ;
@@ -2517,6 +2564,38 @@ PortableImage.indexedCompositingBlit = function( src , dst ) {
 			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
 			let channelValues = src.palette[ src.buffer[ iSrc ] ] ;
 			src.mapping.compose( src , dst , 0 , iDst , src.compositing , channelValues ) ;
+		}
+	}
+} ;
+
+
+
+/*
+	Perform a blit, but (binary) transparency + the source and destination pixel is an index,
+	the palette is assumed to be compatible.
+	The palette should have an alpha channel, but any alpha > 0 is considered opaque.
+
+	Same arguments than .blit(), plus:
+
+	src only:
+		* palette: an array of array of values
+		* alphaChannel: the index of the alpha channel (3 for RGBA, 1 for grayscale+alpha)
+*/
+PortableImage.transparencyBlitFromIndexedToIndexed = function( src , dst ) {
+	console.warn( ".transparencyBlitFromIndexedToIndexed() used" , src , dst ) ;
+	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
+		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
+		channels = Math.floor( src.mapping.length / 2 ) ;
+
+	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
+		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
+			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
+			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
+
+			// If alpha > 0 ...
+			if ( src.palette[ src.buffer[ iSrc ] ][ src.alphaChannel ] ) {
+				dst.buffer[ iDst ] = src.buffer[ iSrc ] ;
+			}
 		}
 	}
 } ;
@@ -2751,6 +2830,7 @@ module.exports = compositing ;
 
 // The normal alpha-blending mode, a “top” layer replacing a “bottom” one.
 compositing.normal = compositing.over = {
+	id: 'over' ,
 	alpha: ( alphaSrc , alphaDst ) => alphaSrc + alphaDst * ( 1 - alphaSrc ) ,
 	channel: ( alphaSrc , alphaDst , channelSrc , channelDst ) =>
 		( channelSrc * alphaSrc + channelDst * alphaDst * ( 1 - alphaSrc ) ) / ( alphaSrc + alphaDst * ( 1 - alphaSrc ) ) || 0
@@ -2758,6 +2838,7 @@ compositing.normal = compositing.over = {
 
 // Like normal/over, but alpha is considered fully transparent (=0) or fully opaque (≥1).
 compositing.binaryOver = {
+	id: 'binaryOver' ,
 	alpha: ( alphaSrc , alphaDst ) => alphaSrc ? 1 : alphaDst ,
 	channel: ( alphaSrc , alphaDst , channelSrc , channelDst ) => alphaSrc ? channelSrc : channelDst
 } ;
@@ -2765,12 +2846,14 @@ compositing.binaryOver = {
 // This intersect the src and the dst for alpha, while using the same method than “over” for the channel.
 // The result is opaque only where both are opaque.
 compositing.in = {
+	id: 'in' ,
 	alpha: ( alphaSrc , alphaDst ) => alphaSrc * alphaDst ,
 	channel: compositing.normal.channel
 } ;
 
 // Src is only copied where dst is transparent, it's like a “in” with dst alpha inverted.
 compositing.out = {
+	id: 'out' ,
 	alpha: ( alphaSrc , alphaDst ) => alphaSrc * ( 1 - alphaDst ) ,
 	channel: ( alphaSrc , alphaDst , channelSrc , channelDst ) =>
 		( channelSrc * alphaSrc + channelDst * ( 1 - alphaDst ) * ( 1 - alphaSrc ) ) / ( alphaSrc + ( 1 - alphaDst ) * ( 1 - alphaSrc ) ) || 0
@@ -2779,6 +2862,7 @@ compositing.out = {
 // Src is only copied where both src and dst are opaque, opaque dst area are left untouched where src is transparent.
 // It uses the same method than “over” for the channel.
 compositing.atop = {
+	id: 'atop' ,
 	alpha: ( alphaSrc , alphaDst ) => compositing.normal.alpha( alphaSrc , alphaDst ) * alphaDst ,
 	channel: compositing.normal.channel
 } ;
@@ -2786,6 +2870,7 @@ compositing.atop = {
 // This use an analogic xor for alpha, while using the same method than “over” for the channel.
 // The result is opaque only where only one is opaque.
 compositing.xor = {
+	id: 'xor' ,
 	alpha: ( alphaSrc , alphaDst ) => alphaSrc * ( 1 - alphaDst ) + alphaDst * ( 1 - alphaSrc ) ,
 	channel: compositing.normal.channel
 } ;
@@ -2797,6 +2882,7 @@ compositing.xor = {
 
 // Multiply, always produce darker output
 compositing.multiply = {
+	id: 'multiply' ,
 	alpha: compositing.normal.alpha ,
 	channel: ( alphaSrc , alphaDst , channelSrc , channelDst ) => compositing.normal.channel(
 		alphaSrc ,
@@ -2808,6 +2894,7 @@ compositing.multiply = {
 
 // Inverse of multiply, always produce brighter output
 compositing.screen = {
+	id: 'screen' ,
 	alpha: compositing.normal.alpha ,
 	channel: ( alphaSrc , alphaDst , channelSrc , channelDst ) => compositing.normal.channel(
 		alphaSrc ,
@@ -2819,6 +2906,7 @@ compositing.screen = {
 
 // Overlay, either a screen or a multiply, with a factor 2.
 compositing.overlay = {
+	id: 'overlay' ,
 	alpha: compositing.normal.alpha ,
 	channel: ( alphaSrc , alphaDst , channelSrc , channelDst ) => compositing.normal.channel(
 		alphaSrc ,
