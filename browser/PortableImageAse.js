@@ -2142,7 +2142,7 @@ function PortableImage( params = {} ) {
 		}
 	}
 	else {
-		this.pixelBuffer = new Buffer( this.width * this.height * this.bytesPerPixel ) ;
+		this.pixelBuffer = Buffer.allocUnsafe( this.width * this.height * this.bytesPerPixel ) ;
 	}
 
 	if ( Array.isArray( params.palette ) ) {
@@ -2336,7 +2336,7 @@ PortableImage.prototype.copyTo = function( portableImage , params = {} ) {
 
 				if ( src.compositing.id === 'binaryOver' && this.channelIndex.alpha !== undefined ) {
 					src.alphaChannel = this.channelIndex.alpha ;
-					PortableImage.transparencyBlitFromIndexedToIndexed( src , dst ) ;
+					PortableImage.fullIndexedBlitWithTransparency( src , dst ) ;
 				}
 				else {
 					throw new Error( "Copy indexed to indexed with compositing is not supported yet, except for 'binaryOver' mode" ) ;
@@ -2571,9 +2571,8 @@ PortableImage.compositingBlitFromIndexed = function( src , dst ) {
 
 
 /*
-	Perform a blit, but (binary) transparency + the source and destination pixel is an index,
-	the palette is assumed to be compatible.
-	The palette should have an alpha channel, but any alpha > 0 is considered opaque.
+	Perform a blit, copying palette indexes, ignoring index-color association, except for source transparency.
+	The transparency is binary, it is either fully transparent (alpha=0) or fully opaque (alpha>0).
 
 	Same arguments than .blit(), plus:
 
@@ -2581,8 +2580,8 @@ PortableImage.compositingBlitFromIndexed = function( src , dst ) {
 		* palette: an array of array of values
 		* alphaChannel: the index of the alpha channel (3 for RGBA, 1 for grayscale+alpha)
 */
-PortableImage.transparencyBlitFromIndexedToIndexed = function( src , dst ) {
-	console.warn( ".transparencyBlitFromIndexedToIndexed() used" , src , dst ) ;
+PortableImage.fullIndexedBlitWithTransparency = function( src , dst ) {
+	console.warn( ".fullIndexedBlitWithTransparency() used" , src , dst ) ;
 	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
 		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
 		channels = Math.floor( src.mapping.length / 2 ) ;

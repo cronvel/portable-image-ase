@@ -38,7 +38,8 @@ async function test() {
 		$canvas = document.getElementById( 'canvas' ) ,
 		ctx = $canvas.getContext( '2d' ) ;
 
-	filename = 'heart.ase' ;
+	//filename = 'heart.ase' ;
+	filename = 'anim.ase' ;
 	var portableImage = await Ase.loadImage( filename ) ;
 	console.log( portableImage ) ;
 
