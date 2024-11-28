@@ -406,7 +406,7 @@ Ase.prototype.generateChunkFromData = function( chunkType , dataBuffer ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./Cel.js":2,"./Frame.js":3,"./Layer.js":4,"./misc.js":5,"buffer":12,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],2:[function(require,module,exports){
+},{"./Cel.js":2,"./Frame.js":3,"./Layer.js":4,"./misc.js":5,"buffer":15,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],2:[function(require,module,exports){
 /*
 	Portable Image Ase
 
@@ -544,10 +544,9 @@ Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
 		let celPortableImage = cel.toImage( PortableImageClass ) ;
 		celPortableImage.copyTo( portableImage , {
 			compositing: PortableImageClass.compositing.binaryOver ,
-			x: cel.x ,
-			y: cel.y
+			x: cel.x , y: cel.y
 		} ) ;
-		console.log( "Copy from/to:" , portableImage , celPortableImage ) ;
+		console.log( "Copy from/to:" , portableImage , celPortableImage , " --- cel: " , cel ) ;
 	}
 	
 	return portableImage ;
@@ -954,7 +953,7 @@ exports.deflate = async ( buffer ) => {
 
 
 }).call(this)}).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":14,"buffer":12,"portable-image":9,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],6:[function(require,module,exports){
+},{"_process":17,"buffer":15,"portable-image":11,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],6:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1364,7 +1363,7 @@ SequentialReadBuffer.prototype.readUBitsBE = function( bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":12}],7:[function(require,module,exports){
+},{"buffer":15}],7:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1812,7 +1811,112 @@ SequentialWriteBuffer.prototype.writeUBitsBE = function( v , bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":12}],8:[function(require,module,exports){
+},{"buffer":15}],8:[function(require,module,exports){
+/*
+	Portable Image
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+function Frame( sprite , params = {} ) {
+	Object.defineProperty( this , 'sprite' , { value: sprite } ) ;
+	this.duration = params.duration ;	// in ms
+	this.flattenLayers = [] ;
+	this.cels = [] ;
+}
+
+module.exports = Frame ;
+
+const Sprite = require( './Sprite.js' ) ;
+const Layer = require( './Layer.js' ) ;
+const PortableImage = require( './PortableImage.js' ) ;
+
+
+
+Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
+	var params = this.ase.getPortableImageParams( PortableImageClass ) ;
+	var portableImage = new PortableImageClass( params ) ;
+	
+	for ( let cel of this.cels ) {
+		if ( ! cel.layer.visible ) { continue ; }
+		let celPortableImage = cel.toImage( PortableImageClass ) ;
+		celPortableImage.copyTo( portableImage , {
+			compositing: PortableImageClass.compositing.binaryOver ,
+			x: cel.x , y: cel.y
+		} ) ;
+		console.log( "Copy from/to:" , portableImage , celPortableImage , " --- cel: " , cel ) ;
+	}
+	
+	return portableImage ;
+} ;
+
+
+},{"./Layer.js":9,"./PortableImage.js":11,"./Sprite.js":12}],9:[function(require,module,exports){
+/*
+	Portable Image
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+function Layer() {
+	this.name = '' ;
+	this.visible = true ;
+	this.compositing = null ;
+	this.opacity = 1 ;
+}
+
+module.exports = Layer ;
+
+
+},{}],10:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2072,7 +2176,7 @@ Mapping.RGB_COMPATIBLE_TO_GRAY_ALPHA = new MatrixChannelMapping(
 ) ;
 
 
-},{}],9:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Portable Image
@@ -2176,6 +2280,7 @@ PortableImage.DirectChannelMappingWithDefault = Mapping.DirectChannelMappingWith
 PortableImage.MatrixChannelMapping = Mapping.MatrixChannelMapping ;
 
 PortableImage.compositing = require( './compositing.js' ) ;
+PortableImage.Sprite = require( './Sprite.js' ) ;
 
 
 
@@ -2791,7 +2896,98 @@ PortableImage.prototype.getClosestPaletteIndex = ( channelValues ) => {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./Mapping.js":8,"./compositing.js":10,"buffer":12}],10:[function(require,module,exports){
+},{"./Mapping.js":10,"./Sprite.js":12,"./compositing.js":13,"buffer":15}],12:[function(require,module,exports){
+/*
+	Portable Image
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+/*
+	A “Sprite” is a multi-layered image, with multiple frames and animation referencing those frames.
+*/
+
+
+
+const Frame = require( './Frame.js' ) ;
+const Layer = require( './Layer.js' ) ;
+const PortableImage = require( './PortableImage.js' ) ;
+
+
+
+function Sprite( params = {} ) {
+
+	// This part contains the same properties than PortableImage instances.
+
+	this.width = params.width ;
+	this.height = params.height ;
+	this.channels = Array.isArray( params.channels ) ? params.channels : PortableImage.RGBA ;
+	this.indexed = params.indexed || Array.isArray( params.palette ) ;
+	this.bytesPerPixel = this.indexed ? 1 : this.channels.length ;
+	this.palette = this.indexed ? [] : null ;
+
+	if ( Array.isArray( params.palette ) ) {
+		this.setPalette( params.palette ) ;
+	}
+
+	this.channelIndex = {} ;
+	for ( let i = 0 ; i < this.channels.length ; i ++ ) {
+		this.channelIndex[ this.channels[ i ] ] = i ;
+	}
+
+	this.isRgbCompatible = this.channels.length >= 3 && this.channels[ 0 ] === 'red' && this.channels[ 1 ] === 'green' && this.channels[ 2 ] === 'blue' ;
+	this.isRgbaCompatible = this.channels.length >= 4 && this.isRgbCompatible && this.channels[ 3 ] === 'alpha' ;
+	this.isRgb = this.isRgbCompatible && this.channels.length === 3 ;
+	this.isRgba = this.isRgbaCompatible && this.channels.length === 4 ;
+
+	this.isGrayCompatible = this.channels.length >= 1 && this.channels[ 0 ] === 'gray' ;
+	this.isGrayAlphaCompatible = this.channels.length >= 2 && this.isGrayCompatible && this.channels[ 1 ] === 'alpha' ;
+	this.isGray = this.isGrayCompatible && this.channels.length === 1 ;
+	this.isGrayAlpha = this.isGrayAlphaCompatible && this.channels.length === 2 ;
+
+	// Sprite-specific properties
+	
+    this.images = [] ;	// PortableImage instances
+    this.layers = [] ;	// Layer instances
+    this.frames = [] ;	// Frame instances
+    this.animations = {} ;	// Animations instances by name
+}
+
+module.exports = Sprite ;
+
+
+
+Sprite.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
+	// Only the first frame
+	return this.frames[ 0 ].toImage( PortableImageClass ) ;
+} ;
+
+
+},{"./Frame.js":8,"./Layer.js":9,"./PortableImage.js":11}],13:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2921,7 +3117,7 @@ compositing.overlay = {
 } ;
 
 
-},{}],11:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -3073,7 +3269,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],12:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -4854,7 +5050,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":11,"buffer":12,"ieee754":13}],13:[function(require,module,exports){
+},{"base64-js":14,"buffer":15,"ieee754":16}],16:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -4941,7 +5137,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],14:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

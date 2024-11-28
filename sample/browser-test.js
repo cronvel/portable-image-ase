@@ -34,21 +34,23 @@ const PortableImage = Ase.PortableImage ;
 
 
 async function test() {
-	var filename , imageDataParams ,
+	var filename , imageDataParams , ase , portableImage ,
 		$canvas = document.getElementById( 'canvas' ) ,
 		ctx = $canvas.getContext( '2d' ) ;
 
 	//filename = 'heart.ase' ;
 	filename = 'anim.ase' ;
-	var portableImage = await Ase.loadImage( filename ) ;
+	ase = await Ase.load( filename ) ;
+	portableImage = ase.toImage() ;
+	//portableImage = ase.frames[ 0 ].cels[ 1 ].toImage() ;
 	console.log( portableImage ) ;
 
 	//ctx.fillStyle = "green"; ctx.fillRect(0, 0, 100, 100);
 
 	//imageDataParams = {} ;
 	imageDataParams = {
-		scaleX: 20 ,
-		scaleY: 20
+		scaleX: 10 , scaleY: 10
+		//scaleX: 20 , scaleY: 20
 	} ;
 	var imageData = portableImage.createImageData( imageDataParams ) ;
 	ctx.putImageData( imageData , 0 , 0 ) ;
