@@ -29,6 +29,7 @@
 "use strict" ;
 
 
+
 /*
 	ASE/ASEPRITE file loader/saver.
 	See: https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
@@ -149,20 +150,22 @@ Ase.decodeImage = function( buffer , options = {} ) {
 
 
 
-Ase.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	var cel = this.frames[ 0 ].cels[ 1 ] ;
-	//return cel.toImage( PortableImageClass ) ;
+Ase.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
+	// Only the first frame
+	return this.frames[ 0 ].toImage( ImageClass ) ;
+} ;
 
+
+
+Ase.prototype.getImageParams = function( ImageClass = misc.PortableImage.Image ) {
 	var params = {
-		width: cel.width ,
-		height: cel.height ,
-		pixelBuffer: cel.pixelBuffer
+		width: this.width ,
+		height: this.height ,
 	} ;
-	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
 
 	switch ( this.colorType ) {
 		case Ase.COLOR_TYPE_RGBA :
-			params.channels = PortableImageClass.RGBA ;
+			params.channels = ImageClass.ChannelDef.RGBA ;
 			break ;
 		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
 			params.channels = [ 'gray' , 'alpha' ] ;
@@ -170,11 +173,11 @@ Ase.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
 		case Ase.COLOR_TYPE_INDEXED :
 			params.indexed = true ;
 			params.palette = this.palette ;
-			params.channels = PortableImageClass.RGBA ;
+			params.channels = ImageClass.ChannelDef.RGBA ;
 			break ;
 	}
 
-	return new PortableImageClass( params ) ;
+	return params ;
 } ;
 
 
@@ -199,7 +202,7 @@ Ase.prototype.decodeImage = async function( buffer , options = {} ) {
 	await this.decode( buffer , options ) ;
 	console.log( this ) ;
 	for ( let frame of this.frames ) { console.log( "Frame:" , frame ) ; }
-	return this.toImage( options.PortableImage ) ;
+	return this.toImage( options.Image ) ;
 } ;
 
 
@@ -215,6 +218,7 @@ Ase.prototype.finalize = async function() {
 
 	for ( let frame of this.frames ) {
 		for ( let cel of frame.cels ) {
+			cel.ase = this ;
 			cel.frame = frame ;
 			cel.layer = frame.flattenLayers[ cel.layerIndex ] ;
 		}
@@ -293,8 +297,8 @@ Ase.prototype.save = async function( url , options = {} ) {
 
 
 
-Ase.saveImage = async function( url , portableImage , options = {} ) {
-	var ase = Ase.fromImage( portableImage ) ;
+Ase.saveImage = async function( url , image , options = {} ) {
+	var ase = Ase.fromImage( image ) ;
 	var buffer = await ase.encode( options ) ;
 	await misc.saveFileAsync( url , buffer ) ;
 } ;
@@ -308,31 +312,31 @@ Ase.prototype.download = async function( filename , options = {} ) {
 
 
 
-Ase.fromImage = function( portableImage ) {
+Ase.fromImage = function( image ) {
 	var params = {
-		width: portableImage.width ,
-		height: portableImage.height ,
-		pixelBuffer: portableImage.pixelBuffer
+		width: image.width ,
+		height: image.height ,
+		pixelBuffer: image.pixelBuffer
 	} ;
 
-	if ( ! portableImage.isRgb && ! portableImage.isRgba && ! portableImage.isGray && ! portableImage.isGrayAlpha ) {
+	if ( ! image.channelDef.isRgb && ! image.channelDef.isRgba && ! image.channelDef.isGray && ! image.channelDef.isGrayAlpha ) {
 		throw new Error( "The image is not supported, RGB, RGBA, Gray, or Gray+Alpha channels are required" ) ;
 	}
 
-	if ( portableImage.indexed ) {
+	if ( image.channelDef.indexed ) {
 		params.colorType = Ase.COLOR_TYPE_INDEXED ;
-		params.palette = portableImage.palette ;
+		params.palette = image.channelDef.palette ;
 	}
-	else if ( portableImage.isRgba ) {
+	else if ( image.channelDef.isRgba ) {
 		params.colorType = Ase.COLOR_TYPE_RGBA ;
 	}
-	else if ( portableImage.isRgb ) {
+	else if ( image.channelDef.isRgb ) {
 		params.colorType = Ase.COLOR_TYPE_RGB ;
 	}
-	else if ( portableImage.isGrayAlpha ) {
+	else if ( image.channelDef.isGrayAlpha ) {
 		params.colorType = Ase.COLOR_TYPE_GRAYSCALE_ALPHA ;
 	}
-	else if ( portableImage.isGray ) {
+	else if ( image.channelDef.isGray ) {
 		params.colorType = Ase.COLOR_TYPE_GRAYSCALE ;
 	}
 
@@ -432,6 +436,7 @@ Ase.prototype.generateChunkFromData = function( chunkType , dataBuffer ) {
 "use strict" ;
 
 
+
 const misc = require( './misc.js' ) ;
 
 
@@ -439,6 +444,7 @@ const misc = require( './misc.js' ) ;
 // They call "Cel" a single-layer image
 function Cel() {
 	Object.defineProperties( this , {
+		ase: { value: null , writable: true } ,
 		frame: { value: null , writable: true } ,
 		layer: { value: null , writable: true }
 	} ) ;
@@ -464,29 +470,14 @@ const Ase = require( './Ase.js' ) ;
 
 
 
-Cel.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	var params = {
-		width: this.width ,
-		height: this.height ,
-		pixelBuffer: this.pixelBuffer
-	} ;
-	console.warn( "pixelBuffer:" , this.width , this.height , this.pixelBuffer ) ;
+Cel.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
+	var params = this.ase.getImageParams( ImageClass ) ;
 
-	switch ( this.colorType ) {
-		case Ase.COLOR_TYPE_RGBA :
-			params.channels = PortableImageClass.RGBA ;
-			break ;
-		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
-			params.channels = [ 'gray' , 'alpha' ] ;
-			break ;
-		case Ase.COLOR_TYPE_INDEXED :
-			params.indexed = true ;
-			params.palette = this.palette ;
-			params.channels = PortableImageClass.RGBA ;
-			break ;
-	}
+	params.width = this.width ;
+	params.height = this.height ;
+	params.pixelBuffer = this.pixelBuffer ;
 
-	return new PortableImageClass( params ) ;
+	return new ImageClass( params ) ;
 } ;
 
 
@@ -520,6 +511,7 @@ Cel.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
 "use strict" ;
 
 
+
 const misc = require( './misc.js' ) ;
 const SequentialReadBuffer = require( 'stream-kit/lib/SequentialReadBuffer.js' ) ;
 const SequentialWriteBuffer = require( 'stream-kit/lib/SequentialWriteBuffer.js' ) ;
@@ -531,7 +523,7 @@ function Frame( ase ) {
 	this.chunkCount = - 1 ;
 	this.duration = ase.defaultFrameDuration ;	// in ms
 	this.palette = [] ;
-	this.flattenLayers = [] ;
+	this.flattenLayers = [] ;	// "Flatten" because it's layers without the hierarchy
 	this.cels = [] ;
 }
 
@@ -543,33 +535,21 @@ const Cel = require( './Cel.js' ) ;
 
 
 
-Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	// Should merge all visible layers
-
-	var cel = this.frames[ 0 ].cels[ 1 ] ;
-
-	var params = {
-		width: cel.width ,
-		height: cel.height ,
-		pixelBuffer: cel.pixelBuffer
-	} ;
-	console.warn( "pixelBuffer:" , cel.width , cel.height , cel.pixelBuffer ) ;
-
-	switch ( this.colorType ) {
-		case Ase.COLOR_TYPE_RGBA :
-			params.channels = PortableImageClass.RGBA ;
-			break ;
-		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
-			params.channels = [ 'gray' , 'alpha' ] ;
-			break ;
-		case Ase.COLOR_TYPE_INDEXED :
-			params.indexed = true ;
-			params.palette = this.palette ;
-			params.channels = PortableImageClass.RGBA ;
-			break ;
+Frame.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
+	var params = this.ase.getImageParams( ImageClass ) ;
+	var image = new ImageClass( params ) ;
+	
+	for ( let cel of this.cels ) {
+		if ( ! cel.layer.visible ) { continue ; }
+		let celImage = cel.toImage( ImageClass ) ;
+		celImage.copyTo( image , {
+			compositing: ImageClass.compositing.binaryOver ,
+			x: cel.x , y: cel.y
+		} ) ;
+		console.log( "Copy from/to:" , image , celImage , " --- cel: " , cel ) ;
 	}
-
-	return new PortableImageClass( params ) ;
+	
+	return image ;
 } ;
 
 
@@ -839,9 +819,6 @@ chunkDecoders[ 0x2007 ] = function( readableBuffer , options ) {
 "use strict" ;
 
 
-//const misc = require( './misc.js' ) ;
-
-
 
 function Layer() {
 	this.visible = true ;
@@ -957,7 +934,7 @@ exports.inflate = async ( buffer ) => {
 
 	// Buffer.concat() also accepts Uint8Array
 	return Buffer.concat( chunks ) ;
-}
+} ;
 
 
 
@@ -972,7 +949,7 @@ exports.deflate = async ( buffer ) => {
 
 	// Buffer.concat() also accepts Uint8Array
 	return Buffer.concat( chunks ) ;
-}
+} ;
 
 
 }).call(this)}).call(this,require('_process'),require("buffer").Buffer)

@@ -150,14 +150,14 @@ Ase.decodeImage = function( buffer , options = {} ) {
 
 
 
-Ase.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
+Ase.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 	// Only the first frame
-	return this.frames[ 0 ].toImage( PortableImageClass ) ;
+	return this.frames[ 0 ].toImage( ImageClass ) ;
 } ;
 
 
 
-Ase.prototype.getPortableImageParams = function( PortableImageClass = misc.PortableImage ) {
+Ase.prototype.getImageParams = function( ImageClass = misc.PortableImage.Image ) {
 	var params = {
 		width: this.width ,
 		height: this.height ,
@@ -165,7 +165,7 @@ Ase.prototype.getPortableImageParams = function( PortableImageClass = misc.Porta
 
 	switch ( this.colorType ) {
 		case Ase.COLOR_TYPE_RGBA :
-			params.channels = PortableImageClass.RGBA ;
+			params.channels = ImageClass.ChannelDef.RGBA ;
 			break ;
 		case Ase.COLOR_TYPE_GRAYSCALE_ALPHA :
 			params.channels = [ 'gray' , 'alpha' ] ;
@@ -173,7 +173,7 @@ Ase.prototype.getPortableImageParams = function( PortableImageClass = misc.Porta
 		case Ase.COLOR_TYPE_INDEXED :
 			params.indexed = true ;
 			params.palette = this.palette ;
-			params.channels = PortableImageClass.RGBA ;
+			params.channels = ImageClass.ChannelDef.RGBA ;
 			break ;
 	}
 
@@ -202,7 +202,7 @@ Ase.prototype.decodeImage = async function( buffer , options = {} ) {
 	await this.decode( buffer , options ) ;
 	console.log( this ) ;
 	for ( let frame of this.frames ) { console.log( "Frame:" , frame ) ; }
-	return this.toImage( options.PortableImage ) ;
+	return this.toImage( options.Image ) ;
 } ;
 
 
@@ -297,8 +297,8 @@ Ase.prototype.save = async function( url , options = {} ) {
 
 
 
-Ase.saveImage = async function( url , portableImage , options = {} ) {
-	var ase = Ase.fromImage( portableImage ) ;
+Ase.saveImage = async function( url , image , options = {} ) {
+	var ase = Ase.fromImage( image ) ;
 	var buffer = await ase.encode( options ) ;
 	await misc.saveFileAsync( url , buffer ) ;
 } ;
@@ -312,31 +312,31 @@ Ase.prototype.download = async function( filename , options = {} ) {
 
 
 
-Ase.fromImage = function( portableImage ) {
+Ase.fromImage = function( image ) {
 	var params = {
-		width: portableImage.width ,
-		height: portableImage.height ,
-		pixelBuffer: portableImage.pixelBuffer
+		width: image.width ,
+		height: image.height ,
+		pixelBuffer: image.pixelBuffer
 	} ;
 
-	if ( ! portableImage.isRgb && ! portableImage.isRgba && ! portableImage.isGray && ! portableImage.isGrayAlpha ) {
+	if ( ! image.channelDef.isRgb && ! image.channelDef.isRgba && ! image.channelDef.isGray && ! image.channelDef.isGrayAlpha ) {
 		throw new Error( "The image is not supported, RGB, RGBA, Gray, or Gray+Alpha channels are required" ) ;
 	}
 
-	if ( portableImage.indexed ) {
+	if ( image.channelDef.indexed ) {
 		params.colorType = Ase.COLOR_TYPE_INDEXED ;
-		params.palette = portableImage.palette ;
+		params.palette = image.channelDef.palette ;
 	}
-	else if ( portableImage.isRgba ) {
+	else if ( image.channelDef.isRgba ) {
 		params.colorType = Ase.COLOR_TYPE_RGBA ;
 	}
-	else if ( portableImage.isRgb ) {
+	else if ( image.channelDef.isRgb ) {
 		params.colorType = Ase.COLOR_TYPE_RGB ;
 	}
-	else if ( portableImage.isGrayAlpha ) {
+	else if ( image.channelDef.isGrayAlpha ) {
 		params.colorType = Ase.COLOR_TYPE_GRAYSCALE_ALPHA ;
 	}
-	else if ( portableImage.isGray ) {
+	else if ( image.channelDef.isGray ) {
 		params.colorType = Ase.COLOR_TYPE_GRAYSCALE ;
 	}
 
@@ -406,7 +406,7 @@ Ase.prototype.generateChunkFromData = function( chunkType , dataBuffer ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./Cel.js":2,"./Frame.js":3,"./Layer.js":4,"./misc.js":5,"buffer":15,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],2:[function(require,module,exports){
+},{"./Cel.js":2,"./Frame.js":3,"./Layer.js":4,"./misc.js":5,"buffer":17,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],2:[function(require,module,exports){
 /*
 	Portable Image Ase
 
@@ -470,14 +470,14 @@ const Ase = require( './Ase.js' ) ;
 
 
 
-Cel.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	var params = this.ase.getPortableImageParams( PortableImageClass ) ;
+Cel.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
+	var params = this.ase.getImageParams( ImageClass ) ;
 
 	params.width = this.width ;
 	params.height = this.height ;
 	params.pixelBuffer = this.pixelBuffer ;
 
-	return new PortableImageClass( params ) ;
+	return new ImageClass( params ) ;
 } ;
 
 
@@ -523,7 +523,7 @@ function Frame( ase ) {
 	this.chunkCount = - 1 ;
 	this.duration = ase.defaultFrameDuration ;	// in ms
 	this.palette = [] ;
-	this.flattenLayers = [] ;
+	this.flattenLayers = [] ;	// "Flatten" because it's layers without the hierarchy
 	this.cels = [] ;
 }
 
@@ -535,21 +535,21 @@ const Cel = require( './Cel.js' ) ;
 
 
 
-Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	var params = this.ase.getPortableImageParams( PortableImageClass ) ;
-	var portableImage = new PortableImageClass( params ) ;
+Frame.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
+	var params = this.ase.getImageParams( ImageClass ) ;
+	var image = new ImageClass( params ) ;
 	
 	for ( let cel of this.cels ) {
 		if ( ! cel.layer.visible ) { continue ; }
-		let celPortableImage = cel.toImage( PortableImageClass ) ;
-		celPortableImage.copyTo( portableImage , {
-			compositing: PortableImageClass.compositing.binaryOver ,
+		let celImage = cel.toImage( ImageClass ) ;
+		celImage.copyTo( image , {
+			compositing: ImageClass.compositing.binaryOver ,
 			x: cel.x , y: cel.y
 		} ) ;
-		console.log( "Copy from/to:" , portableImage , celPortableImage , " --- cel: " , cel ) ;
+		console.log( "Copy from/to:" , image , celImage , " --- cel: " , cel ) ;
 	}
 	
-	return portableImage ;
+	return image ;
 } ;
 
 
@@ -934,7 +934,7 @@ exports.inflate = async ( buffer ) => {
 
 	// Buffer.concat() also accepts Uint8Array
 	return Buffer.concat( chunks ) ;
-}
+} ;
 
 
 
@@ -949,11 +949,11 @@ exports.deflate = async ( buffer ) => {
 
 	// Buffer.concat() also accepts Uint8Array
 	return Buffer.concat( chunks ) ;
-}
+} ;
 
 
 }).call(this)}).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":17,"buffer":15,"portable-image":11,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],6:[function(require,module,exports){
+},{"_process":19,"buffer":17,"portable-image":15,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],6:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1363,7 +1363,7 @@ SequentialReadBuffer.prototype.readUBitsBE = function( bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":15}],7:[function(require,module,exports){
+},{"buffer":17}],7:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1811,7 +1811,261 @@ SequentialWriteBuffer.prototype.writeUBitsBE = function( v , bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":15}],8:[function(require,module,exports){
+},{"buffer":17}],8:[function(require,module,exports){
+/*
+	Portable Image
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+/*
+	Params:
+		channels: the channels, default to [ 'red' , 'green' , 'blue' , 'alpha' ] or PortableImage.RGBA
+		indexed: (boolean) it uses a palette, up to 256 entries, each pixel is a 1-Byte index
+		palette: (array of array of integers) force indexed a pass an array of array of channel value
+*/
+function ChannelDef( params = {} ) {
+	this.channels = Array.isArray( params.channels ) ? params.channels : ChannelDef.RGBA ;
+	this.indexed = params.indexed || Array.isArray( params.palette ) ;
+	this.bytesPerPixel = this.indexed ? 1 : this.channels.length ;
+	this.palette = this.indexed ? [] : null ;
+
+	if ( Array.isArray( params.palette ) ) {
+		this.setPalette( params.palette ) ;
+	}
+
+	this.channelIndex = {} ;
+	for ( let i = 0 ; i < this.channels.length ; i ++ ) {
+		this.channelIndex[ this.channels[ i ] ] = i ;
+	}
+
+	this.isRgbCompatible = this.channels.length >= 3 && this.channels[ 0 ] === 'red' && this.channels[ 1 ] === 'green' && this.channels[ 2 ] === 'blue' ;
+	this.isRgbaCompatible = this.channels.length >= 4 && this.isRgbCompatible && this.channels[ 3 ] === 'alpha' ;
+	this.isRgb = this.isRgbCompatible && this.channels.length === 3 ;
+	this.isRgba = this.isRgbaCompatible && this.channels.length === 4 ;
+
+	this.isGrayCompatible = this.channels.length >= 1 && this.channels[ 0 ] === 'gray' ;
+	this.isGrayAlphaCompatible = this.channels.length >= 2 && this.isGrayCompatible && this.channels[ 1 ] === 'alpha' ;
+	this.isGray = this.isGrayCompatible && this.channels.length === 1 ;
+	this.isGrayAlpha = this.isGrayAlphaCompatible && this.channels.length === 2 ;
+}
+
+module.exports = ChannelDef ;
+
+
+
+const Mapping = ChannelDef.Mapping = require( './Mapping.js' ) ;
+ChannelDef.Mapping = Mapping ;
+ChannelDef.DirectChannelMapping = Mapping.DirectChannelMapping ;
+ChannelDef.DirectChannelMappingWithDefault = Mapping.DirectChannelMappingWithDefault ;
+ChannelDef.MatrixChannelMapping = Mapping.MatrixChannelMapping ;
+
+ChannelDef.compositing = require( './compositing.js' ) ;
+
+
+
+ChannelDef.RGB = [ 'red' , 'green' , 'blue' ] ;
+ChannelDef.RGBA = [ 'red' , 'green' , 'blue' , 'alpha' ] ;
+ChannelDef.GRAY = [ 'gray' ] ;
+ChannelDef.GRAY_ALPHA = [ 'gray' , 'alpha' ] ;
+
+
+
+ChannelDef.prototype.setPalette = function( palette ) {
+	if ( ! this.indexed ) { throw new Error( "This is not an indexed image" ) ; }
+
+	this.palette.length = 0 ;
+
+	for ( let index = 0 ; index < palette.length ; index ++ ) {
+		this.setPaletteEntry( index , palette[ index ] ) ;
+	}
+} ;
+
+
+
+ChannelDef.prototype.setPaletteEntry = function( index , entry ) {
+	if ( this.isRgb || this.isRgba ) { return this.setPaletteColor( index , entry ) ; }
+
+	if ( ! this.indexed ) { throw new Error( "This is not an indexed image" ) ; }
+	if ( ! entry ) { return ; }
+
+	var currentEntry = this.palette[ index ] ;
+	if ( ! currentEntry ) { currentEntry = this.palette[ index ] = [] ; }
+
+	if ( Array.isArray( entry ) ) {
+		for ( let i = 0 ; i < this.channels.length ; i ++ ) {
+			currentEntry[ i ] = entry[ i ] ?? 0 ;
+		}
+	}
+	else if ( typeof entry === 'object' ) {
+		for ( let i = 0 ; i < this.channels.length ; i ++ ) {
+			currentEntry[ i ] = entry[ this.channels[ i ] ] ?? 0 ;
+		}
+	}
+} ;
+
+
+
+const LESSER_BYTE_MASK = 0xff ;
+
+ChannelDef.prototype.setPaletteColor = function( index , color ) {
+	if ( ! this.indexed ) { throw new Error( "This is not an indexed image" ) ; }
+	if ( ! color ) { return ; }
+
+	var currentColor = this.palette[ index ] ;
+	if ( ! currentColor ) { currentColor = this.palette[ index ] = [] ; }
+
+	if ( Array.isArray( color ) ) {
+		currentColor[ 0 ] = color[ 0 ] ?? 0 ;
+		currentColor[ 1 ] = color[ 1 ] ?? 0 ;
+		currentColor[ 2 ] = color[ 2 ] ?? 0 ;
+		if ( this.isRgba ) { currentColor[ 3 ] = color[ 3 ] ?? 255 ; }
+	}
+	else if ( typeof color === 'object' ) {
+		currentColor[ 0 ] = color.R ?? color.r ?? 0 ;
+		currentColor[ 1 ] = color.G ?? color.g ?? 0 ;
+		currentColor[ 2 ] = color.B ?? color.b ?? 0 ;
+		if ( this.isRgba ) { currentColor[ 3 ] = color.A ?? color.a ?? 255 ; }
+	}
+	else if ( typeof color === 'string' && color[ 0 ] === '#' ) {
+		color = color.slice( 1 ) ;
+		if ( color.length === 3 ) {
+			color = color[ 0 ] + color[ 0 ] + color[ 1 ] + color[ 1 ] + color[ 2 ] + color[ 2 ] ;
+		}
+
+		let code = Number.parseInt( color , 16 ) ;
+
+		if ( color.length === 6 ) {
+			currentColor[ 0 ] = ( code >> 16 ) & LESSER_BYTE_MASK ;
+			currentColor[ 1 ] = ( code >> 8 ) & LESSER_BYTE_MASK ;
+			currentColor[ 2 ] = code & LESSER_BYTE_MASK ;
+			if ( this.isRgba ) { currentColor[ 3 ] = 255 ; }
+		}
+		else if ( color.length === 8 ) {
+			currentColor[ 0 ] = ( code >> 24 ) & LESSER_BYTE_MASK ;
+			currentColor[ 1 ] = ( code >> 16 ) & LESSER_BYTE_MASK ;
+			currentColor[ 2 ] = ( code >> 8 ) & LESSER_BYTE_MASK ;
+			if ( this.isRgba ) { currentColor[ 3 ] = code & LESSER_BYTE_MASK ; }
+		}
+	}
+} ;
+
+
+
+ChannelDef.prototype.hasSamePalette = function( channelDef ) {
+	if ( ! this.palette || ! channelDef.palette ) { return false ; }
+	if ( this.palette.length !== channelDef.palette.length ) { return false ; }
+
+	for ( let index = 0 ; index < this.palette.length ; index ++ ) {
+		let values = this.palette[ index ] ;
+
+		for ( let c = 0 ; c < values.length ; c ++ ) {
+			if ( values[ c ] !== channelDef.palette[ index ][ c ] ) { return false ; }
+		}
+	}
+
+	return true ;
+} ;
+
+
+
+ChannelDef.DEFAULT_CHANNEL_VALUES = {
+	red: 0 ,
+	green: 0 ,
+	blue: 0 ,
+	alpha: 255
+} ;
+
+ChannelDef.prototype.getAutoMappingToChannels = function( toChannels , defaultChannelValues = ChannelDef.DEFAULT_CHANNEL_VALUES ) {
+	var matrix = new Array( toChannels.length * 2 ) ;
+
+	for ( let index = 0 ; index < toChannels.length ; index ++ ) {
+		let channel = toChannels[ index ] ;
+
+		if ( Object.hasOwn( this.channelIndex , channel ) ) {
+			matrix[ index * 2 ] = this.channelIndex[ channel ] ;
+			matrix[ index * 2 + 1 ] = null ;
+		}
+		else {
+			matrix[ index * 2 ] = null ;
+			matrix[ index * 2 + 1 ] = defaultChannelValues[ channel ] ?? 0 ;
+		}
+	}
+
+	return new ChannelDef.DirectChannelMappingWithDefault( matrix ) ;
+} ;
+
+ChannelDef.getAutoMapping = function( fromChannels , toChannels , defaultChannelValues = ChannelDef.DEFAULT_CHANNEL_VALUES ) {
+	var matrix = new Array( toChannels.length * 2 ) ;
+
+	for ( let index = 0 ; index < toChannels.length ; index ++ ) {
+		let channel = toChannels[ index ] ;
+		let indexOf = fromChannels.indexOf( channel ) ;
+
+		if ( indexOf >= 0 ) {
+			matrix[ index * 2 ] = indexOf ;
+			matrix[ index * 2 + 1 ] = null ;
+		}
+		else {
+			matrix[ index * 2 ] = null ;
+			matrix[ index * 2 + 1 ] = defaultChannelValues[ channel ] ?? 0 ;
+		}
+	}
+
+	return new ChannelDef.DirectChannelMappingWithDefault( matrix ) ;
+} ;
+
+
+
+// Simple color matcher
+ChannelDef.prototype.getClosestPaletteIndex = ( channelValues ) => {
+	var cMax = Math.min( this.channels.length , channelValues.length ) ,
+		minDist = Infinity ,
+		minIndex = 0 ;
+
+	for ( let index = 0 ; index < this.palette.length ; index ++ ) {
+		let dist = 0 ;
+
+		for ( let c = 0 ; c < cMax ; c ++ ) {
+			let delta = this.palette[ index ][ c ] - channelValues[ c ] ;
+			dist += delta * delta ;
+
+			if ( dist < minDist ) {
+				minDist = dist ;
+				minIndex = index ;
+			}
+		}
+	}
+
+	return minIndex ;
+} ;
+
+
+},{"./Mapping.js":12,"./compositing.js":14}],9:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -1845,37 +2099,38 @@ SequentialWriteBuffer.prototype.writeUBitsBE = function( v , bitCount ) {
 function Frame( sprite , params = {} ) {
 	Object.defineProperty( this , 'sprite' , { value: sprite } ) ;
 	this.duration = params.duration ;	// in ms
-	this.flattenLayers = [] ;
-	this.cels = [] ;
+	this.cells = [] ;	// Cells are ordered so that indexes are the than Sprite.layers indexes
 }
 
 module.exports = Frame ;
 
 const Sprite = require( './Sprite.js' ) ;
 const Layer = require( './Layer.js' ) ;
-const PortableImage = require( './PortableImage.js' ) ;
+const Image = require( './Image.js' ) ;
 
 
 
-Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
-	var params = this.ase.getPortableImageParams( PortableImageClass ) ;
-	var portableImage = new PortableImageClass( params ) ;
-	
+Frame.prototype.toImage = function( ImageClass = Image ) {
+	var params = this.ase.getPortableImageParams( ImageClass ) ;
+	var portableImage = new ImageClass( params ) ;
+
 	for ( let cel of this.cels ) {
 		if ( ! cel.layer.visible ) { continue ; }
-		let celPortableImage = cel.toImage( PortableImageClass ) ;
-		celPortableImage.copyTo( portableImage , {
-			compositing: PortableImageClass.compositing.binaryOver ,
-			x: cel.x , y: cel.y
+		let celImage = cel.toImage( ImageClass ) ;
+		celImage.copyTo( portableImage , {
+			compositing: ImageClass.compositing.binaryOver ,
+			x: cel.x ,
+			y: cel.y
 		} ) ;
-		console.log( "Copy from/to:" , portableImage , celPortableImage , " --- cel: " , cel ) ;
+		console.log( "Copy from/to:" , portableImage , celImage , " --- cel: " , cel ) ;
 	}
-	
+
 	return portableImage ;
 } ;
 
 
-},{"./Layer.js":9,"./PortableImage.js":11,"./Sprite.js":12}],9:[function(require,module,exports){
+},{"./Image.js":10,"./Layer.js":11,"./Sprite.js":13}],10:[function(require,module,exports){
+(function (Buffer){(function (){
 /*
 	Portable Image
 
@@ -1906,17 +2161,530 @@ Frame.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
 
 
 
-function Layer() {
-	this.name = '' ;
-	this.visible = true ;
-	this.compositing = null ;
-	this.opacity = 1 ;
+const ChannelDef = require( './ChannelDef.js' ) ;
+
+
+
+/*
+	Params:
+		width: image width in pixel
+		height: image height in pixel
+		channelDef: pass an already existing channel definition
+		channels: the channels, default to [ 'red' , 'green' , 'blue' , 'alpha' ] or ChannelDef.RGBA
+		indexed: (boolean) it uses a palette, up to 256 entries, each pixel is a 1-Byte index
+		palette: (array of array of integers) force indexed a pass an array of array of channel value
+		pixelBuffer: (Buffer or Uint8Array) the buffer containing all the pixel data
+*/
+function Image( params = {} ) {
+	this.width = params.width ;
+	this.height = params.height ;
+	this.channelDef = params.channelDef ?? new ChannelDef( params ) ;
+	this.pixelBuffer = null ;
+
+	if ( params.pixelBuffer ) {
+		if ( params.pixelBuffer instanceof Buffer ) {
+			if ( params.pixelBuffer.length !== this.width * this.height * this.channelDef.bytesPerPixel ) {
+				throw new Error( "Provided pixel Buffer mismatch the expected size (should be exactly width * height * bytesPerPixel)" ) ;
+			}
+
+			this.pixelBuffer = params.pixelBuffer ;
+		}
+		else if ( params.pixelBuffer instanceof Uint8Array ) {
+			if ( params.pixelBuffer.length !== this.width * this.height * this.channelDef.bytesPerPixel ) {
+				throw new Error( "Provided pixel Uint8Array buffer mismatch the expected size (should be exactly width * height * bytesPerPixel)" ) ;
+			}
+
+			this.pixelBuffer = Buffer.from( params.pixelBuffer ) ;
+		}
+		else {
+			throw new Error( "Provided pixel buffer is not a Buffer or a Uint8Array" ) ;
+		}
+	}
+	else {
+		this.pixelBuffer = Buffer.allocUnsafe( this.width * this.height * this.channelDef.bytesPerPixel ) ;
+	}
+}
+
+module.exports = Image ;
+
+
+
+Image.ChannelDef = ChannelDef ;
+Image.compositing = require( './compositing.js' ) ;
+
+Image.prototype.setPalette = function( palette ) { this.channelDef.setPalette( palette ) ; } ;
+Image.prototype.setPaletteEntry = function( index , entry ) { this.channelDef.setPaletteEntry( index , entry ) ; } ;
+Image.prototype.setPaletteColor = function( index , color ) { this.channelDef.setPaletteColor( index , color ) ; } ;
+Image.prototype.hasSamePalette = function( image ) { return this.channelDef.hasSamePalette( image.channelDef ) ; } ;
+
+// Create the mapping to another Image
+Image.prototype.getAutoMappingTo = function( toImage , defaultChannelValues = ChannelDef.DEFAULT_CHANNEL_VALUES ) {
+	return this.channelDef.getAutoMappingToChannels( toImage.channelDef.channels , defaultChannelValues ) ;
+} ;
+
+
+
+/*
+	Copy to another Image instance.
+*/
+Image.prototype.copyTo = function( image , params = {} ) {
+	var mapping = params.mapping ,
+		scaleX = params.scaleX ?? params.scale ?? 1 ,
+		scaleY = params.scaleY ?? params.scale ?? 1 ;
+
+	if ( ! mapping ) {
+		mapping = this.getAutoMappingTo( image ) ;
+	}
+
+	let src = {
+		buffer: this.pixelBuffer ,
+		width: this.width ,
+		height: this.height ,
+		bytesPerPixel: this.channelDef.bytesPerPixel ,
+		x: params.x < 0 ? - params.x / scaleX : 0 ,
+		y: params.y < 0 ? - params.y / scaleY : 0 ,
+		endX: this.width ,
+		endY: this.height ,
+		channels: this.channelDef.channels.length ,
+		scaleX ,
+		scaleY ,
+		mapping ,
+		compositing: params.compositing || null
+	} ;
+
+	let dst = {
+		buffer: image.pixelBuffer ,
+		width: image.width ,
+		height: image.height ,
+		bytesPerPixel: image.channelDef.bytesPerPixel ,
+		x: params.x > 0 ? params.x : 0 ,
+		y: params.y > 0 ? params.y : 0 ,
+		endX: image.width ,
+		endY: image.height ,
+		channels: image.channelDef.channels.length
+	} ;
+	//console.log( "### Mapping: " , dst.mapping ) ;
+
+	if ( src.compositing ) {
+		if ( this.channelDef.indexed ) {
+			if ( image.channelDef.indexed ) {
+				if ( ! this.hasSamePalette( image ) ) {
+					throw new Error( "Uncompatible palettes are not supported yet" ) ;
+				}
+
+				src.palette = this.channelDef.palette ;
+
+				if ( src.compositing.id === 'binaryOver' && this.channelDef.channelIndex.alpha !== undefined ) {
+					src.alphaChannel = this.channelDef.channelIndex.alpha ;
+					Image.fullIndexedBlitWithTransparency( src , dst ) ;
+				}
+				else {
+					throw new Error( "Copy indexed to indexed with compositing is not supported yet, except for 'binaryOver' mode" ) ;
+				}
+			}
+			else {
+				src.palette = this.channelDef.palette ;
+				Image.compositingBlitFromIndexed( src , dst ) ;
+			}
+		}
+		else {
+			if ( image.channelDef.indexed ) { throw new Error( "Copy to indexed portable image is not supported yet" ) ; }
+			Image.compositingBlit( src , dst ) ;
+		}
+	}
+	else {
+		if ( this.channelDef.indexed ) {
+			if ( image.channelDef.indexed ) {
+				if ( ! this.hasSamePalette( image ) ) {
+					throw new Error( "Uncompatible palettes are not supported yet" ) ;
+				}
+
+				src.mapping = ChannelDef.Mapping.INDEXED_TO_INDEXED ;
+				Image.blit( src , dst ) ;
+			}
+			else {
+				src.palette = this.channelDef.palette ;
+				Image.blitFromIndexed( src , dst ) ;
+			}
+		}
+		else {
+			if ( image.channelDef.indexed ) { throw new Error( "Copy to indexed portable image is not supported yet" ) ; }
+			Image.blit( src , dst ) ;
+		}
+	}
+} ;
+
+
+
+Image.prototype.createImageData = function( params = {} ) {
+	var scaleX = params.scaleX ?? params.scale ?? 1 ,
+		scaleY = params.scaleY ?? params.scale ?? 1 ;
+
+	var imageData = new ImageData( this.width * scaleX , this.height * scaleY ) ;
+	this.updateImageData( imageData , params ) ;
+	return imageData ;
+} ;
+
+
+
+Image.prototype.updateImageData = function( imageData , params = {} ) {
+	var mapping = params.mapping ,
+		scaleX = params.scaleX ?? params.scale ?? 1 ,
+		scaleY = params.scaleY ?? params.scale ?? 1 ;
+
+	if ( ! mapping ) {
+		if ( imageData.width === this.width && imageData.height === this.height ) {
+			if ( this.channelDef.indexed ) {
+				if ( this.channelDef.isRgbaCompatible ) { return this.isoIndexedRgbaCompatibleToRgbaBlit( imageData.data ) ; }
+				if ( this.channelDef.isRgbCompatible ) { return this.isoIndexedRgbCompatibleToRgbaBlit( imageData.data ) ; }
+			}
+			else {
+				if ( this.channelDef.isRgbaCompatible ) { return this.isoRgbaCompatibleToRgbaBlit( imageData.data ) ; }
+				if ( this.channelDef.isRgbCompatible ) { return this.isoRgbCompatibleToRgbaBlit( imageData.data ) ; }
+			}
+		}
+
+		if ( this.channelDef.isRgbaCompatible ) { mapping = ChannelDef.Mapping.RGBA_COMPATIBLE_TO_RGBA ; }
+		else if ( this.channelDef.isRgbCompatible ) { mapping = ChannelDef.Mapping.RGB_COMPATIBLE_TO_RGBA ; }
+		else if ( this.channelDef.isGrayAlphaCompatible ) { mapping = ChannelDef.Mapping.GRAY_ALPHA_COMPATIBLE_TO_RGBA ; }
+		else if ( this.channelDef.isGrayCompatible ) { mapping = ChannelDef.Mapping.GRAY_COMPATIBLE_TO_RGBA ; }
+		else { throw new Error( "Mapping required for image that are not RGB/RGBA/Grayscale/Grayscale+Alpha compatible" ) ; }
+	}
+
+	//console.warn( "Mapping:" , mapping ) ;
+
+	let src = {
+		buffer: this.pixelBuffer ,
+		width: this.width ,
+		height: this.height ,
+		bytesPerPixel: this.channelDef.bytesPerPixel ,
+		x: params.x < 0 ? - params.x / scaleX : 0 ,
+		y: params.y < 0 ? - params.y / scaleY : 0 ,
+		endX: this.width ,
+		endY: this.height ,
+		channels: this.channelDef.channels.length ,
+		scaleX ,
+		scaleY ,
+		mapping ,
+		compositing: params.compositing || null
+	} ;
+
+	let dst = {
+		buffer: imageData.data ,
+		width: imageData.width ,
+		height: imageData.height ,
+		bytesPerPixel: 4 ,
+		x: params.x > 0 ? params.x : 0 ,
+		y: params.y > 0 ? params.y : 0 ,
+		endX: imageData.width ,
+		endY: imageData.height ,
+		channels: 4
+	} ;
+
+	if ( src.compositing ) {
+		if ( this.channelDef.indexed ) {
+			src.palette = this.channelDef.palette ;
+			Image.compositingBlitFromIndexed( src , dst ) ;
+		}
+		else {
+			Image.compositingBlit( src , dst ) ;
+		}
+	}
+	else {
+		if ( this.channelDef.indexed ) {
+			src.palette = this.channelDef.palette ;
+			Image.blitFromIndexed( src , dst ) ;
+		}
+		else {
+			Image.blit( src , dst ) ;
+		}
+	}
+} ;
+
+
+
+/*
+	Perform a regular blit, copying a rectangle are a the src to a rectangulare are of the dst.
+
+	src, dst:
+		* buffer: array-like
+		* width,height: geometry stored in the array-like
+		* bytesPerPixel
+		* x,y: coordinate where to start copying (included)
+		* endX,endY: coordinate where to stop copying (excluded)
+	src only:
+		* scaleX,scaleY: drawing scale (nearest)
+		* mapping: an instance of Mapping, that maps the channels from src to dst
+*/
+Image.blit = function( src , dst ) {
+	//console.warn( ".blit() used" , src , dst ) ;
+	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
+		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ;
+
+	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
+		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
+			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
+			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
+			src.mapping.map( src , dst , iSrc , iDst ) ;
+		}
+	}
+} ;
+
+
+
+/*
+	Perform a blit, but the source pixel is an index, that will be substituted by the relevant source palette.
+
+	Same arguments than .blit(), plus:
+
+	src only:
+		* palette: an array of array of values
+*/
+Image.blitFromIndexed = function( src , dst ) {
+	console.warn( ".blitFromIndexed() used" , src , dst ) ;
+	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
+		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ;
+
+	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
+		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
+			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
+			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
+			let channelValues = src.palette[ src.buffer[ iSrc ] ] ;
+			src.mapping.map( src , dst , 0 , iDst , channelValues ) ;
+		}
+	}
+} ;
+
+
+
+/*
+	Perform a blit, but with compositing (alpha-blending, etc).
+
+	src only:
+		* compositing: a compositing object, having a method "alpha" and "channel"
+*/
+Image.compositingBlit = function( src , dst ) {
+	//console.warn( ".compositingBlit() used" , src , dst ) ;
+	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
+		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ;
+
+	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
+		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
+			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
+			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
+			src.mapping.compose( src , dst , iSrc , iDst , src.compositing ) ;
+		}
+	}
+} ;
+
+
+
+/*
+	Perform a blit, but with compositing (alpha-blending, etc) + the source pixel is an index,
+	that will be substituted by the relevant source palette.
+
+	Same arguments than .blit(), plus:
+
+	src only:
+		* palette: an array of array of values
+		* compositing: a compositing object, having a method "alpha" and "channel"
+*/
+Image.compositingBlitFromIndexed = function( src , dst ) {
+	//console.warn( ".compositingBlitFromIndexed() used" , src , dst ) ;
+	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
+		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ;
+
+	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
+		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
+			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
+			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
+			let channelValues = src.palette[ src.buffer[ iSrc ] ] ;
+			src.mapping.compose( src , dst , 0 , iDst , src.compositing , channelValues ) ;
+		}
+	}
+} ;
+
+
+
+/*
+	Perform a blit, copying palette indexes, ignoring index-color association, except for source transparency.
+	The transparency is binary, it is either fully transparent (alpha=0) or fully opaque (alpha>0).
+
+	Same arguments than .blit(), plus:
+
+	src only:
+		* palette: an array of array of values
+		* alphaChannel: the index of the alpha channel (3 for RGBA, 1 for grayscale+alpha)
+*/
+Image.fullIndexedBlitWithTransparency = function( src , dst ) {
+	console.warn( ".fullIndexedBlitWithTransparency() used" , src , dst ) ;
+	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
+		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ;
+
+	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
+		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
+			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
+			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
+
+			// If alpha > 0 ...
+			if ( src.palette[ src.buffer[ iSrc ] ][ src.alphaChannel ] ) {
+				dst.buffer[ iDst ] = src.buffer[ iSrc ] ;
+			}
+		}
+	}
+} ;
+
+
+
+// Optimized Blit for RGB-compatible to RGBA
+Image.prototype.isoRgbCompatibleToRgbaBlit = function( dst ) {
+	//console.warn( ".isoRgbCompatibleToRgbaBlit() used" , dst ) ;
+	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
+		let iSrc = i * this.channelDef.bytesPerPixel ;
+		let iDst = i * 4 ;
+
+		dst[ iDst ] = this.pixelBuffer[ iSrc ] ;			// Red
+		dst[ iDst + 1 ] = this.pixelBuffer[ iSrc + 1 ] ;	// Green
+		dst[ iDst + 2 ] = this.pixelBuffer[ iSrc + 2 ] ;	// Blue
+		dst[ iDst + 3 ] = 255 ;	// Alpha
+	}
+} ;
+
+
+
+// Optimized Blit for RGBA-compatible to RGBA
+Image.prototype.isoRgbaCompatibleToRgbaBlit = function( dst ) {
+	//console.warn( ".isoRgbaCompatibleToRgbaBlit() used" , dst , this ) ;
+	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
+		let iSrc = i * this.channelDef.bytesPerPixel ;
+		let iDst = i * 4 ;
+
+		dst[ iDst ] = this.pixelBuffer[ iSrc ] ;			// Red
+		dst[ iDst + 1 ] = this.pixelBuffer[ iSrc + 1 ] ;	// Green
+		dst[ iDst + 2 ] = this.pixelBuffer[ iSrc + 2 ] ;	// Blue
+		dst[ iDst + 3 ] = this.pixelBuffer[ iSrc + 3 ] ;	// Alpha
+	}
+} ;
+
+
+
+// Optimized Blit for Indexed RGB-compatible to RGBA
+Image.prototype.isoIndexedRgbCompatibleToRgbaBlit = function( dst ) {
+	//console.warn( ".isoIndexedRgbCompatibleToRgbaBlit() used" , dst ) ;
+	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
+		let iSrc = i * this.channelDef.bytesPerPixel ;
+		let iDst = i * 4 ;
+		let paletteEntry = this.channelDef.palette[ this.pixelBuffer[ iSrc ] ] ;
+
+		dst[ iDst ] = paletteEntry[ 0 ] ;		// Red
+		dst[ iDst + 1 ] = paletteEntry[ 1 ] ;	// Green
+		dst[ iDst + 2 ] = paletteEntry[ 2 ] ;	// Blue
+		dst[ iDst + 3 ] = 255 ;	// Alpha
+	}
+} ;
+
+
+
+// Optimized Blit for Indexed RGBA-compatible to RGBA
+Image.prototype.isoIndexedRgbaCompatibleToRgbaBlit = function( dst ) {
+	//console.warn( ".isoIndexedRgbaCompatibleToRgbaBlit() used" , dst ) ;
+	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
+		let iSrc = i * this.channelDef.bytesPerPixel ;
+		let iDst = i * 4 ;
+		let paletteEntry = this.channelDef.palette[ this.pixelBuffer[ iSrc ] ] ;
+
+		dst[ iDst ] = paletteEntry[ 0 ] ;		// Red
+		dst[ iDst + 1 ] = paletteEntry[ 1 ] ;	// Green
+		dst[ iDst + 2 ] = paletteEntry[ 2 ] ;	// Blue
+		dst[ iDst + 3 ] = paletteEntry[ 3 ] ;	// Alpha
+	}
+} ;
+
+
+
+Image.prototype.updateFromImageData = function( imageData , mapping ) {
+	throw new Error( "Not coded!" ) ;
+
+	// /!\ TODO /!\
+	/*
+
+	if ( ! mapping ) {
+		if ( this.channelDef.isRgbaCompatible ) { mapping = ChannelDef.Mapping.RGBA_COMPATIBLE_TO_RGBA ; }
+		else if ( this.channelDef.isRgbCompatible ) { mapping = ChannelDef.Mapping.RGB_COMPATIBLE_TO_RGBA ; }
+		else { throw new Error( "ChannelDef.Mapping required for image that are not RGB/RGBA compatible" ) ; }
+	}
+
+	if ( imageData.width !== this.width || imageData.height !== this.height ) {
+		throw new Error( ".updateFromImageData(): width and/or height mismatch" ) ;
+	}
+
+	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
+		let iDst = i * this.channelDef.bytesPerPixel ;
+		let iSrc = i * 4 ;
+
+		if ( this.channelDef.indexed ) {
+			let channelValues = [] ;
+			channelValues[ iDst + mapping[ 0 ] ] = imageData[ iSrc ] ;
+			channelValues[ iDst + mapping[ 1 ] ] = imageData[ iSrc + 1 ] ;
+			channelValues[ iDst + mapping[ 2 ] ] = imageData[ iSrc + 2 ] ;
+			channelValues[ iDst + mapping[ 3 ] ] = imageData[ iSrc + 3 ] ;
+
+			this.pixelBuffer[ iDst ] = this.getClosestPaletteIndex( channelValues ) ;
+		}
+
+		this.pixelBuffer[ iDst + mapping[ 0 ] ] = imageData[ iSrc ] ;
+		this.pixelBuffer[ iDst + mapping[ 1 ] ] = imageData[ iSrc + 1 ] ;
+		this.pixelBuffer[ iDst + mapping[ 2 ] ] = imageData[ iSrc + 2 ] ;
+		this.pixelBuffer[ iDst + mapping[ 3 ] ] = imageData[ iSrc + 3 ] ;
+	}
+	*/
+} ;
+
+
+}).call(this)}).call(this,require("buffer").Buffer)
+},{"./ChannelDef.js":8,"./compositing.js":14,"buffer":17}],11:[function(require,module,exports){
+/*
+	Portable Image
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+function Layer( name , params = {} ) {
+	this.name = name || '' ;
+	this.visible = params.visible ?? true ;
+	this.compositing = params.compositing ?? null ;	// Compositing mode
+	this.opacity = params.opacity ?? 1 ;
+	this.order = params.order ?? 0 ;	// The order of the layer, rendered from lower to greater
 }
 
 module.exports = Layer ;
 
 
-},{}],10:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2176,727 +2944,7 @@ Mapping.RGB_COMPATIBLE_TO_GRAY_ALPHA = new MatrixChannelMapping(
 ) ;
 
 
-},{}],11:[function(require,module,exports){
-(function (Buffer){(function (){
-/*
-	Portable Image
-
-	Copyright (c) 2024 Cédric Ronvel
-
-	The MIT License (MIT)
-
-	Permission is hereby granted, free of charge, to any person obtaining a copy
-	of this software and associated documentation files (the "Software"), to deal
-	in the Software without restriction, including without limitation the rights
-	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-	copies of the Software, and to permit persons to whom the Software is
-	furnished to do so, subject to the following conditions:
-
-	The above copyright notice and this permission notice shall be included in all
-	copies or substantial portions of the Software.
-
-	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-	SOFTWARE.
-*/
-
-"use strict" ;
-
-
-
-/*
-	Params:
-		width: image width in pixel
-		height: image height in pixel
-		channels: the channels, default to [ 'red' , 'green' , 'blue' , 'alpha' ] or PortableImage.RGBA
-		indexed: (boolean) it uses a palette, up to 256 entries, each pixel is a 1-Byte index
-		palette: (array of array of integers) force indexed a pass an array of array of channel value
-		pixelBuffer: (Buffer or Uint8Array) the buffer containing all the pixel data
-*/
-function PortableImage( params = {} ) {
-	this.width = params.width ;
-	this.height = params.height ;
-	this.channels = Array.isArray( params.channels ) ? params.channels : PortableImage.RGBA ;
-	this.indexed = params.indexed || Array.isArray( params.palette ) ;
-	this.bytesPerPixel = this.indexed ? 1 : this.channels.length ;
-	this.palette = this.indexed ? [] : null ;
-	this.pixelBuffer = null ;
-
-	if ( params.pixelBuffer ) {
-		if ( params.pixelBuffer instanceof Buffer ) {
-			if ( params.pixelBuffer.length !== this.width * this.height * this.bytesPerPixel ) {
-				throw new Error( "Provided pixel Buffer mismatch the expected size (should be exactly width * height * bytesPerPixel)" ) ;
-			}
-
-			this.pixelBuffer = params.pixelBuffer ;
-		}
-		else if ( params.pixelBuffer instanceof Uint8Array ) {
-			if ( params.pixelBuffer.length !== this.width * this.height * this.bytesPerPixel ) {
-				throw new Error( "Provided pixel Uint8Array buffer mismatch the expected size (should be exactly width * height * bytesPerPixel)" ) ;
-			}
-
-			this.pixelBuffer = Buffer.from( params.pixelBuffer ) ;
-		}
-		else {
-			throw new Error( "Provided pixel buffer is not a Buffer or a Uint8Array" ) ;
-		}
-	}
-	else {
-		this.pixelBuffer = Buffer.allocUnsafe( this.width * this.height * this.bytesPerPixel ) ;
-	}
-
-	if ( Array.isArray( params.palette ) ) {
-		this.setPalette( params.palette ) ;
-	}
-
-	this.channelIndex = {} ;
-	for ( let i = 0 ; i < this.channels.length ; i ++ ) {
-		this.channelIndex[ this.channels[ i ] ] = i ;
-	}
-
-	this.isRgbCompatible = this.channels.length >= 3 && this.channels[ 0 ] === 'red' && this.channels[ 1 ] === 'green' && this.channels[ 2 ] === 'blue' ;
-	this.isRgbaCompatible = this.channels.length >= 4 && this.isRgbCompatible && this.channels[ 3 ] === 'alpha' ;
-	this.isRgb = this.isRgbCompatible && this.channels.length === 3 ;
-	this.isRgba = this.isRgbaCompatible && this.channels.length === 4 ;
-
-	this.isGrayCompatible = this.channels.length >= 1 && this.channels[ 0 ] === 'gray' ;
-	this.isGrayAlphaCompatible = this.channels.length >= 2 && this.isGrayCompatible && this.channels[ 1 ] === 'alpha' ;
-	this.isGray = this.isGrayCompatible && this.channels.length === 1 ;
-	this.isGrayAlpha = this.isGrayAlphaCompatible && this.channels.length === 2 ;
-}
-
-module.exports = PortableImage ;
-
-
-
-const Mapping = PortableImage.Mapping = require( './Mapping.js' ) ;
-PortableImage.Mapping = Mapping ;
-PortableImage.DirectChannelMapping = Mapping.DirectChannelMapping ;
-PortableImage.DirectChannelMappingWithDefault = Mapping.DirectChannelMappingWithDefault ;
-PortableImage.MatrixChannelMapping = Mapping.MatrixChannelMapping ;
-
-PortableImage.compositing = require( './compositing.js' ) ;
-PortableImage.Sprite = require( './Sprite.js' ) ;
-
-
-
-PortableImage.RGB = [ 'red' , 'green' , 'blue' ] ;
-PortableImage.RGBA = [ 'red' , 'green' , 'blue' , 'alpha' ] ;
-PortableImage.GRAY = [ 'gray' ] ;
-PortableImage.GRAY_ALPHA = [ 'gray' , 'alpha' ] ;
-
-
-
-PortableImage.prototype.setPalette = function( palette ) {
-	if ( ! this.indexed ) { throw new Error( "This is not an indexed image" ) ; }
-
-	this.palette.length = 0 ;
-
-	for ( let index = 0 ; index < palette.length ; index ++ ) {
-		this.setPaletteEntry( index , palette[ index ] ) ;
-	}
-} ;
-
-
-
-PortableImage.prototype.setPaletteEntry = function( index , entry ) {
-	if ( this.isRgb || this.isRgba ) { return this.setPaletteColor( index , entry ) ; }
-
-	if ( ! this.indexed ) { throw new Error( "This is not an indexed image" ) ; }
-	if ( ! entry ) { return ; }
-
-	var currentEntry = this.palette[ index ] ;
-	if ( ! currentEntry ) { currentEntry = this.palette[ index ] = [] ; }
-
-	if ( Array.isArray( entry ) ) {
-		for ( let i = 0 ; i < this.channels.length ; i ++ ) {
-			currentEntry[ i ] = entry[ i ] ?? 0 ;
-		}
-	}
-	else if ( typeof entry === 'object' ) {
-		for ( let i = 0 ; i < this.channels.length ; i ++ ) {
-			currentEntry[ i ] = entry[ this.channels[ i ] ] ?? 0 ;
-		}
-	}
-} ;
-
-
-
-const LESSER_BYTE_MASK = 0xff ;
-
-PortableImage.prototype.setPaletteColor = function( index , color ) {
-	if ( ! this.indexed ) { throw new Error( "This is not an indexed image" ) ; }
-	if ( ! color ) { return ; }
-
-	var currentColor = this.palette[ index ] ;
-	if ( ! currentColor ) { currentColor = this.palette[ index ] = [] ; }
-
-	if ( Array.isArray( color ) ) {
-		currentColor[ 0 ] = color[ 0 ] ?? 0 ;
-		currentColor[ 1 ] = color[ 1 ] ?? 0 ;
-		currentColor[ 2 ] = color[ 2 ] ?? 0 ;
-		if ( this.isRgba ) { currentColor[ 3 ] = color[ 3 ] ?? 255 ; }
-	}
-	else if ( typeof color === 'object' ) {
-		currentColor[ 0 ] = color.R ?? color.r ?? 0 ;
-		currentColor[ 1 ] = color.G ?? color.g ?? 0 ;
-		currentColor[ 2 ] = color.B ?? color.b ?? 0 ;
-		if ( this.isRgba ) { currentColor[ 3 ] = color.A ?? color.a ?? 255 ; }
-	}
-	else if ( typeof color === 'string' && color[ 0 ] === '#' ) {
-		color = color.slice( 1 ) ;
-		if ( color.length === 3 ) {
-			color = color[ 0 ] + color[ 0 ] + color[ 1 ] + color[ 1 ] + color[ 2 ] + color[ 2 ] ;
-		}
-
-		let code = Number.parseInt( color , 16 ) ;
-
-		if ( color.length === 6 ) {
-			currentColor[ 0 ] = ( code >> 16 ) & LESSER_BYTE_MASK ;
-			currentColor[ 1 ] = ( code >> 8 ) & LESSER_BYTE_MASK ;
-			currentColor[ 2 ] = code & LESSER_BYTE_MASK ;
-			if ( this.isRgba ) { currentColor[ 3 ] = 255 ; }
-		}
-		else if ( color.length === 8 ) {
-			currentColor[ 0 ] = ( code >> 24 ) & LESSER_BYTE_MASK ;
-			currentColor[ 1 ] = ( code >> 16 ) & LESSER_BYTE_MASK ;
-			currentColor[ 2 ] = ( code >> 8 ) & LESSER_BYTE_MASK ;
-			if ( this.isRgba ) { currentColor[ 3 ] = code & LESSER_BYTE_MASK ; }
-		}
-	}
-} ;
-
-
-
-PortableImage.prototype.hasSamePalette = function( portableImage ) {
-	if ( ! this.palette || ! portableImage.palette ) { return false ; }
-	if ( this.palette.length !== portableImage.palette.length ) { return false ; }
-
-	for ( let index = 0 ; index < this.palette.length ; index ++ ) {
-		let values = this.palette[ index ] ;
-
-		for ( let c = 0 ; c < values.length ; c ++ ) {
-			if ( values[ c ] !== portableImage.palette[ index ][ c ] ) { return false ; }
-		}
-	}
-
-	return true ;
-} ;
-
-
-
-/*
-	Copy to another PortableImage instance.
-*/
-PortableImage.prototype.copyTo = function( portableImage , params = {} ) {
-	var mapping = params.mapping ,
-		scaleX = params.scaleX ?? params.scale ?? 1 ,
-		scaleY = params.scaleY ?? params.scale ?? 1 ;
-
-	if ( ! mapping ) {
-		mapping = this.getAutoMappingTo( portableImage ) ;
-	}
-
-	let src = {
-		buffer: this.pixelBuffer ,
-		width: this.width ,
-		height: this.height ,
-		bytesPerPixel: this.bytesPerPixel ,
-		x: params.x < 0 ? - params.x / scaleX : 0 ,
-		y: params.y < 0 ? - params.y / scaleY : 0 ,
-		endX: this.width ,
-		endY: this.height ,
-		channels: this.channels.length ,
-		scaleX ,
-		scaleY ,
-		mapping ,
-		compositing: params.compositing || null
-	} ;
-
-	let dst = {
-		buffer: portableImage.pixelBuffer ,
-		width: portableImage.width ,
-		height: portableImage.height ,
-		bytesPerPixel: portableImage.bytesPerPixel ,
-		x: params.x > 0 ? params.x : 0 ,
-		y: params.y > 0 ? params.y : 0 ,
-		endX: portableImage.width ,
-		endY: portableImage.height ,
-		channels: portableImage.channels.length
-	} ;
-	//console.log( "### Mapping: " , dst.mapping ) ;
-
-	if ( src.compositing ) {
-		if ( this.indexed ) {
-			if ( portableImage.indexed ) {
-				if ( ! this.hasSamePalette( portableImage ) ) {
-					throw new Error( "Uncompatible palettes are not supported yet" ) ;
-				}
-
-				src.palette = this.palette ;
-
-				if ( src.compositing.id === 'binaryOver' && this.channelIndex.alpha !== undefined ) {
-					src.alphaChannel = this.channelIndex.alpha ;
-					PortableImage.fullIndexedBlitWithTransparency( src , dst ) ;
-				}
-				else {
-					throw new Error( "Copy indexed to indexed with compositing is not supported yet, except for 'binaryOver' mode" ) ;
-				}
-			}
-			else {
-				src.palette = this.palette ;
-				PortableImage.compositingBlitFromIndexed( src , dst ) ;
-			}
-		}
-		else {
-			if ( portableImage.indexed ) { throw new Error( "Copy to indexed portable image is not supported yet" ) ; }
-			PortableImage.compositingBlit( src , dst ) ;
-		}
-	}
-	else {
-		if ( this.indexed ) {
-			if ( portableImage.indexed ) {
-				if ( ! this.hasSamePalette( portableImage ) ) {
-					throw new Error( "Uncompatible palettes are not supported yet" ) ;
-				}
-
-				src.mapping = Mapping.INDEXED_TO_INDEXED ;
-				PortableImage.blit( src , dst ) ;
-			}
-			else {
-				src.palette = this.palette ;
-				PortableImage.blitFromIndexed( src , dst ) ;
-			}
-		}
-		else {
-			if ( portableImage.indexed ) { throw new Error( "Copy to indexed portable image is not supported yet" ) ; }
-			PortableImage.blit( src , dst ) ;
-		}
-	}
-} ;
-
-
-
-PortableImage.prototype.createImageData = function( params = {} ) {
-	var scaleX = params.scaleX ?? params.scale ?? 1 ,
-		scaleY = params.scaleY ?? params.scale ?? 1 ;
-
-	var imageData = new ImageData( this.width * scaleX , this.height * scaleY ) ;
-	this.updateImageData( imageData , params ) ;
-	return imageData ;
-} ;
-
-
-
-PortableImage.prototype.updateImageData = function( imageData , params = {} ) {
-	var mapping = params.mapping ,
-		scaleX = params.scaleX ?? params.scale ?? 1 ,
-		scaleY = params.scaleY ?? params.scale ?? 1 ;
-
-	if ( ! mapping ) {
-		if ( imageData.width === this.width && imageData.height === this.height ) {
-			if ( this.indexed ) {
-				if ( this.isRgbaCompatible ) { return this.isoIndexedRgbaCompatibleToRgbaBlit( imageData.data ) ; }
-				if ( this.isRgbCompatible ) { return this.isoIndexedRgbCompatibleToRgbaBlit( imageData.data ) ; }
-			}
-			else {
-				if ( this.isRgbaCompatible ) { return this.isoRgbaCompatibleToRgbaBlit( imageData.data ) ; }
-				if ( this.isRgbCompatible ) { return this.isoRgbCompatibleToRgbaBlit( imageData.data ) ; }
-			}
-		}
-
-		if ( this.isRgbaCompatible ) { mapping = Mapping.RGBA_COMPATIBLE_TO_RGBA ; }
-		else if ( this.isRgbCompatible ) { mapping = Mapping.RGB_COMPATIBLE_TO_RGBA ; }
-		else if ( this.isGrayAlphaCompatible ) { mapping = Mapping.GRAY_ALPHA_COMPATIBLE_TO_RGBA ; }
-		else if ( this.isGrayCompatible ) { mapping = Mapping.GRAY_COMPATIBLE_TO_RGBA ; }
-		else { throw new Error( "Mapping required for image that are not RGB/RGBA/Grayscale/Grayscale+Alpha compatible" ) ; }
-	}
-
-	//console.warn( "Mapping:" , mapping ) ;
-
-	let src = {
-		buffer: this.pixelBuffer ,
-		width: this.width ,
-		height: this.height ,
-		bytesPerPixel: this.bytesPerPixel ,
-		x: params.x < 0 ? - params.x / scaleX : 0 ,
-		y: params.y < 0 ? - params.y / scaleY : 0 ,
-		endX: this.width ,
-		endY: this.height ,
-		channels: this.channels.length ,
-		scaleX ,
-		scaleY ,
-		mapping ,
-		compositing: params.compositing || null
-	} ;
-
-	let dst = {
-		buffer: imageData.data ,
-		width: imageData.width ,
-		height: imageData.height ,
-		bytesPerPixel: 4 ,
-		x: params.x > 0 ? params.x : 0 ,
-		y: params.y > 0 ? params.y : 0 ,
-		endX: imageData.width ,
-		endY: imageData.height ,
-		channels: 4
-	} ;
-
-	if ( src.compositing ) {
-		if ( this.indexed ) {
-			src.palette = this.palette ;
-			PortableImage.compositingBlitFromIndexed( src , dst ) ;
-		}
-		else {
-			PortableImage.compositingBlit( src , dst ) ;
-		}
-	}
-	else {
-		if ( this.indexed ) {
-			src.palette = this.palette ;
-			PortableImage.blitFromIndexed( src , dst ) ;
-		}
-		else {
-			PortableImage.blit( src , dst ) ;
-		}
-	}
-} ;
-
-
-
-/*
-	Perform a regular blit, copying a rectangle are a the src to a rectangulare are of the dst.
-
-	src, dst:
-		* buffer: array-like
-		* width,height: geometry stored in the array-like
-		* bytesPerPixel
-		* x,y: coordinate where to start copying (included)
-		* endX,endY: coordinate where to stop copying (excluded)
-	src only:
-		* scaleX,scaleY: drawing scale (nearest)
-		* mapping: an instance of Mapping, that maps the channels from src to dst
-*/
-PortableImage.blit = function( src , dst ) {
-	//console.warn( ".blit() used" , src , dst ) ;
-	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
-		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
-		channels = Math.floor( src.mapping.length / 2 ) ;
-
-	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
-		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
-			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
-			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
-			src.mapping.map( src , dst , iSrc , iDst ) ;
-		}
-	}
-} ;
-
-
-
-/*
-	Perform a blit, but the source pixel is an index, that will be substituted by the relevant source palette.
-
-	Same arguments than .blit(), plus:
-
-	src only:
-		* palette: an array of array of values
-*/
-PortableImage.blitFromIndexed = function( src , dst ) {
-	console.warn( ".blitFromIndexed() used" , src , dst ) ;
-	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
-		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
-		channels = Math.floor( src.mapping.length / 2 ) ;
-
-	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
-		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
-			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
-			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
-			let channelValues = src.palette[ src.buffer[ iSrc ] ] ;
-			src.mapping.map( src , dst , 0 , iDst , channelValues ) ;
-		}
-	}
-} ;
-
-
-
-/*
-	Perform a blit, but with compositing (alpha-blending, etc).
-
-	src only:
-		* compositing: a compositing object, having a method "alpha" and "channel"
-*/
-PortableImage.compositingBlit = function( src , dst ) {
-	//console.warn( ".compositingBlit() used" , src , dst ) ;
-	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
-		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
-		channels = Math.floor( src.mapping.length / 2 ) ;
-
-	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
-		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
-			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
-			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
-			src.mapping.compose( src , dst , iSrc , iDst , src.compositing ) ;
-		}
-	}
-} ;
-
-
-
-/*
-	Perform a blit, but with compositing (alpha-blending, etc) + the source pixel is an index,
-	that will be substituted by the relevant source palette.
-
-	Same arguments than .blit(), plus:
-
-	src only:
-		* palette: an array of array of values
-		* compositing: a compositing object, having a method "alpha" and "channel"
-*/
-PortableImage.compositingBlitFromIndexed = function( src , dst ) {
-	//console.warn( ".compositingBlitFromIndexed() used" , src , dst ) ;
-	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
-		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
-		channels = Math.floor( src.mapping.length / 2 ) ;
-
-	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
-		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
-			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
-			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
-			let channelValues = src.palette[ src.buffer[ iSrc ] ] ;
-			src.mapping.compose( src , dst , 0 , iDst , src.compositing , channelValues ) ;
-		}
-	}
-} ;
-
-
-
-/*
-	Perform a blit, copying palette indexes, ignoring index-color association, except for source transparency.
-	The transparency is binary, it is either fully transparent (alpha=0) or fully opaque (alpha>0).
-
-	Same arguments than .blit(), plus:
-
-	src only:
-		* palette: an array of array of values
-		* alphaChannel: the index of the alpha channel (3 for RGBA, 1 for grayscale+alpha)
-*/
-PortableImage.fullIndexedBlitWithTransparency = function( src , dst ) {
-	console.warn( ".fullIndexedBlitWithTransparency() used" , src , dst ) ;
-	var blitWidth = Math.min( dst.endX - dst.x , ( src.endX - src.x ) * src.scaleX ) ,
-		blitHeight = Math.min( dst.endY - dst.y , ( src.endY - src.y ) * src.scaleY ) ,
-		channels = Math.floor( src.mapping.length / 2 ) ;
-
-	for ( let yOffset = 0 ; yOffset < blitHeight ; yOffset ++ ) {
-		for ( let xOffset = 0 ; xOffset < blitWidth ; xOffset ++ ) {
-			let iDst = ( ( dst.y + yOffset ) * dst.width + ( dst.x + xOffset ) ) * dst.bytesPerPixel ;
-			let iSrc = ( Math.floor( src.y + yOffset / src.scaleY ) * src.width + Math.floor( src.x + xOffset / src.scaleX ) ) * src.bytesPerPixel ;
-
-			// If alpha > 0 ...
-			if ( src.palette[ src.buffer[ iSrc ] ][ src.alphaChannel ] ) {
-				dst.buffer[ iDst ] = src.buffer[ iSrc ] ;
-			}
-		}
-	}
-} ;
-
-
-
-// Optimized Blit for RGB-compatible to RGBA
-PortableImage.prototype.isoRgbCompatibleToRgbaBlit = function( dst ) {
-	//console.warn( ".isoRgbCompatibleToRgbaBlit() used" , dst ) ;
-	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
-		let iSrc = i * this.bytesPerPixel ;
-		let iDst = i * 4 ;
-
-		dst[ iDst ] = this.pixelBuffer[ iSrc ] ;			// Red
-		dst[ iDst + 1 ] = this.pixelBuffer[ iSrc + 1 ] ;	// Green
-		dst[ iDst + 2 ] = this.pixelBuffer[ iSrc + 2 ] ;	// Blue
-		dst[ iDst + 3 ] = 255 ;	// Alpha
-	}
-} ;
-
-
-
-// Optimized Blit for RGBA-compatible to RGBA
-PortableImage.prototype.isoRgbaCompatibleToRgbaBlit = function( dst ) {
-	//console.warn( ".isoRgbaCompatibleToRgbaBlit() used" , dst , this ) ;
-	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
-		let iSrc = i * this.bytesPerPixel ;
-		let iDst = i * 4 ;
-
-		dst[ iDst ] = this.pixelBuffer[ iSrc ] ;			// Red
-		dst[ iDst + 1 ] = this.pixelBuffer[ iSrc + 1 ] ;	// Green
-		dst[ iDst + 2 ] = this.pixelBuffer[ iSrc + 2 ] ;	// Blue
-		dst[ iDst + 3 ] = this.pixelBuffer[ iSrc + 3 ] ;	// Alpha
-	}
-} ;
-
-
-
-// Optimized Blit for Indexed RGB-compatible to RGBA
-PortableImage.prototype.isoIndexedRgbCompatibleToRgbaBlit = function( dst ) {
-	//console.warn( ".isoIndexedRgbCompatibleToRgbaBlit() used" , dst ) ;
-	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
-		let iSrc = i * this.bytesPerPixel ;
-		let iDst = i * 4 ;
-		let paletteEntry = this.palette[ this.pixelBuffer[ iSrc ] ] ;
-
-		dst[ iDst ] = paletteEntry[ 0 ] ;		// Red
-		dst[ iDst + 1 ] = paletteEntry[ 1 ] ;	// Green
-		dst[ iDst + 2 ] = paletteEntry[ 2 ] ;	// Blue
-		dst[ iDst + 3 ] = 255 ;	// Alpha
-	}
-} ;
-
-
-
-// Optimized Blit for Indexed RGBA-compatible to RGBA
-PortableImage.prototype.isoIndexedRgbaCompatibleToRgbaBlit = function( dst ) {
-	//console.warn( ".isoIndexedRgbaCompatibleToRgbaBlit() used" , dst ) ;
-	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
-		let iSrc = i * this.bytesPerPixel ;
-		let iDst = i * 4 ;
-		let paletteEntry = this.palette[ this.pixelBuffer[ iSrc ] ] ;
-
-		dst[ iDst ] = paletteEntry[ 0 ] ;		// Red
-		dst[ iDst + 1 ] = paletteEntry[ 1 ] ;	// Green
-		dst[ iDst + 2 ] = paletteEntry[ 2 ] ;	// Blue
-		dst[ iDst + 3 ] = paletteEntry[ 3 ] ;	// Alpha
-	}
-} ;
-
-
-
-PortableImage.prototype.updateFromImageData = function( imageData , mapping ) {
-	throw new Error( "Not coded!" ) ;
-
-	// /!\ TODO /!\
-	/*
-
-	if ( ! mapping ) {
-		if ( this.isRgbaCompatible ) { mapping = Mapping.RGBA_COMPATIBLE_TO_RGBA ; }
-		else if ( this.isRgbCompatible ) { mapping = Mapping.RGB_COMPATIBLE_TO_RGBA ; }
-		else { throw new Error( "Mapping required for image that are not RGB/RGBA compatible" ) ; }
-	}
-
-	if ( imageData.width !== this.width || imageData.height !== this.height ) {
-		throw new Error( ".updateFromImageData(): width and/or height mismatch" ) ;
-	}
-
-	for ( let i = 0 , imax = this.width * this.height ; i < imax ; i ++ ) {
-		let iDst = i * this.bytesPerPixel ;
-		let iSrc = i * 4 ;
-
-		if ( this.indexed ) {
-			let channelValues = [] ;
-			channelValues[ iDst + mapping[ 0 ] ] = imageData[ iSrc ] ;
-			channelValues[ iDst + mapping[ 1 ] ] = imageData[ iSrc + 1 ] ;
-			channelValues[ iDst + mapping[ 2 ] ] = imageData[ iSrc + 2 ] ;
-			channelValues[ iDst + mapping[ 3 ] ] = imageData[ iSrc + 3 ] ;
-
-			this.pixelBuffer[ iDst ] = this.getClosestPaletteIndex( channelValues ) ;
-		}
-
-		this.pixelBuffer[ iDst + mapping[ 0 ] ] = imageData[ iSrc ] ;
-		this.pixelBuffer[ iDst + mapping[ 1 ] ] = imageData[ iSrc + 1 ] ;
-		this.pixelBuffer[ iDst + mapping[ 2 ] ] = imageData[ iSrc + 2 ] ;
-		this.pixelBuffer[ iDst + mapping[ 3 ] ] = imageData[ iSrc + 3 ] ;
-	}
-	*/
-} ;
-
-
-
-/*
-	Mapping is an array of twice the number of the channels, pairs of values :
-	* the first value of the pair is the channel fixed value, it's null if the second of the pair should be used instead
-	* the second value of the pair is the source channel index, it's null if the first of the pair should be used instead
-*/
-
-PortableImage.DEFAULT_CHANNEL_VALUES = {
-	red: 0 ,
-	green: 0 ,
-	blue: 0 ,
-	alpha: 255
-} ;
-
-// Create the mapping to another PortableImage
-PortableImage.prototype.getAutoMappingTo = function( toPortableImage , defaultChannelValues = PortableImage.DEFAULT_CHANNEL_VALUES ) {
-	return this.getAutoMappingToChannels( toPortableImage.channels , defaultChannelValues ) ;
-} ;
-
-PortableImage.prototype.getAutoMappingToChannels = function( toChannels , defaultChannelValues = PortableImage.DEFAULT_CHANNEL_VALUES ) {
-	var matrix = new Array( toChannels.length * 2 ) ;
-
-	for ( let index = 0 ; index < toChannels.length ; index ++ ) {
-		let channel = toChannels[ index ] ;
-
-		if ( Object.hasOwn( this.channelIndex , channel ) ) {
-			matrix[ index * 2 ] = this.channelIndex[ channel ] ;
-			matrix[ index * 2 + 1 ] = null ;
-		}
-		else {
-			matrix[ index * 2 ] = null ;
-			matrix[ index * 2 + 1 ] = defaultChannelValues[ channel ] ?? 0 ;
-		}
-	}
-
-	return new PortableImage.DirectChannelMappingWithDefault( matrix ) ;
-} ;
-
-PortableImage.getAutoMapping = function( fromChannels , toChannels , defaultChannelValues = PortableImage.DEFAULT_CHANNEL_VALUES ) {
-	var matrix = new Array( toChannels.length * 2 ) ;
-
-	for ( let index = 0 ; index < toChannels.length ; index ++ ) {
-		let channel = toChannels[ index ] ;
-		let indexOf = fromChannels.indexOf( channel ) ;
-
-		if ( indexOf >= 0 ) {
-			matrix[ index * 2 ] = indexOf ;
-			matrix[ index * 2 + 1 ] = null ;
-		}
-		else {
-			matrix[ index * 2 ] = null ;
-			matrix[ index * 2 + 1 ] = defaultChannelValues[ channel ] ?? 0 ;
-		}
-	}
-
-	return new PortableImage.DirectChannelMappingWithDefault( matrix ) ;
-} ;
-
-
-
-// Simple color matcher
-PortableImage.prototype.getClosestPaletteIndex = ( channelValues ) => {
-	var cMax = Math.min( this.channels.length , channelValues.length ) ,
-		minDist = Infinity ,
-		minIndex = 0 ;
-
-	for ( let index = 0 ; index < this.palette.length ; index ++ ) {
-		let dist = 0 ;
-
-		for ( let c = 0 ; c < cMax ; c ++ ) {
-			let delta = this.palette[ index ][ c ] - channelValues[ c ] ;
-			dist += delta * delta ;
-
-			if ( dist < minDist ) {
-				minDist = dist ;
-				minIndex = index ;
-			}
-		}
-	}
-
-	return minIndex ;
-} ;
-
-
-}).call(this)}).call(this,require("buffer").Buffer)
-},{"./Mapping.js":10,"./Sprite.js":12,"./compositing.js":13,"buffer":15}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2935,21 +2983,24 @@ PortableImage.prototype.getClosestPaletteIndex = ( channelValues ) => {
 
 const Frame = require( './Frame.js' ) ;
 const Layer = require( './Layer.js' ) ;
-const PortableImage = require( './PortableImage.js' ) ;
+const Image = require( './Image.js' ) ;
 
 
 
 function Sprite( params = {} ) {
-
-	// This part contains the same properties than PortableImage instances.
-
+	// Clipping size
 	this.width = params.width ;
 	this.height = params.height ;
-	this.channels = Array.isArray( params.channels ) ? params.channels : PortableImage.RGBA ;
-	this.indexed = params.indexed || Array.isArray( params.palette ) ;
-	this.bytesPerPixel = this.indexed ? 1 : this.channels.length ;
-	this.palette = this.indexed ? [] : null ;
 
+	this.images = [] ;	// Image instances
+	this.layers = [] ;	// Layer instances
+	this.frames = [] ;	// Frame instances
+	this.animations = [] ;	// Animations instances
+
+	this.orderedLayers = [] ;	// Store layer indexes
+	this.animationByName = new Map() ;	// Animation name to animation index
+
+	/*
 	if ( Array.isArray( params.palette ) ) {
 		this.setPalette( params.palette ) ;
 	}
@@ -2958,36 +3009,20 @@ function Sprite( params = {} ) {
 	for ( let i = 0 ; i < this.channels.length ; i ++ ) {
 		this.channelIndex[ this.channels[ i ] ] = i ;
 	}
-
-	this.isRgbCompatible = this.channels.length >= 3 && this.channels[ 0 ] === 'red' && this.channels[ 1 ] === 'green' && this.channels[ 2 ] === 'blue' ;
-	this.isRgbaCompatible = this.channels.length >= 4 && this.isRgbCompatible && this.channels[ 3 ] === 'alpha' ;
-	this.isRgb = this.isRgbCompatible && this.channels.length === 3 ;
-	this.isRgba = this.isRgbaCompatible && this.channels.length === 4 ;
-
-	this.isGrayCompatible = this.channels.length >= 1 && this.channels[ 0 ] === 'gray' ;
-	this.isGrayAlphaCompatible = this.channels.length >= 2 && this.isGrayCompatible && this.channels[ 1 ] === 'alpha' ;
-	this.isGray = this.isGrayCompatible && this.channels.length === 1 ;
-	this.isGrayAlpha = this.isGrayAlphaCompatible && this.channels.length === 2 ;
-
-	// Sprite-specific properties
-	
-    this.images = [] ;	// PortableImage instances
-    this.layers = [] ;	// Layer instances
-    this.frames = [] ;	// Frame instances
-    this.animations = {} ;	// Animations instances by name
+	*/
 }
 
 module.exports = Sprite ;
 
 
 
-Sprite.prototype.toImage = function( PortableImageClass = misc.PortableImage ) {
+Sprite.prototype.toImage = function( ImageClass ) {
 	// Only the first frame
-	return this.frames[ 0 ].toImage( PortableImageClass ) ;
+	return this.frames[ 0 ].toImage( ImageClass ) ;
 } ;
 
 
-},{"./Frame.js":8,"./Layer.js":9,"./PortableImage.js":11}],13:[function(require,module,exports){
+},{"./Frame.js":9,"./Image.js":10,"./Layer.js":11}],14:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -3117,7 +3152,47 @@ compositing.overlay = {
 } ;
 
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
+/*
+	Portable Image
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+const lib = {} ;
+module.exports = lib ;
+
+lib.Image = require( './Image.js' ) ;
+lib.Sprite = require( './Sprite.js' ) ;
+lib.Mapping = require( './Mapping.js' ) ;
+lib.compositing = require( './compositing.js' ) ;
+
+
+},{"./Image.js":10,"./Mapping.js":12,"./Sprite.js":13,"./compositing.js":14}],16:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -3269,7 +3344,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],15:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -5050,7 +5125,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":14,"buffer":15,"ieee754":16}],16:[function(require,module,exports){
+},{"base64-js":16,"buffer":17,"ieee754":18}],18:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -5137,7 +5212,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],17:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
