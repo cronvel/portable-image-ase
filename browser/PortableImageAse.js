@@ -51,7 +51,7 @@ function Ase() {
 
 	this.flags = - 1 ;
 	this.defaultFrameDuration = - 1 ;
-	this.transparencyColorIndex = -1 ;	// transparency index, only for indexed mode
+	this.transparencyColorIndex = - 1 ;	// transparency index, only for indexed mode
 	this.colorCount = - 1 ;
 	this.pixelWidth = - 1 ;
 	this.pixelHeight = - 1 ;
@@ -59,13 +59,13 @@ function Ase() {
 	this.gridX = 0 ;
 	this.gridY = 0 ;
 	this.gridWidth = - 1 ;
-    this.gridHeight = - 1 ;
-    
-    // Frames data
-    this.frames = [] ;
+	this.gridHeight = - 1 ;
 
-    // Linked data
-    this.palette = null ;
+	// Frames data
+	this.frames = [] ;
+
+	// Linked data
+	this.palette = null ;
 }
 
 module.exports = Ase ;
@@ -150,6 +150,7 @@ Ase.decodeImage = function( buffer , options = {} ) {
 
 
 
+// Create a PortableImage.Image from the ASE
 Ase.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 	// Only the first frame
 	return this.frames[ 0 ].toImage( ImageClass ) ;
@@ -157,10 +158,27 @@ Ase.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 
 
 
+// Create a PortableImage.Sprite from the ASE
+Ase.prototype.toSprite = function( SpriteClass = misc.PortableImage.Sprite ) {
+	var params = this.ase.getImageParams( SpriteClass.Image ) ;
+	params.width = this.pixelWidth ;
+	params.height = this.pixelHeight ;
+
+	var sprite = new SpriteClass( params ) ;
+
+	for ( let frame of this.frames ) {
+		frame.addSpriteFrame( sprite ) ;
+	}
+
+	return sprite ;
+} ;
+
+
+
 Ase.prototype.getImageParams = function( ImageClass = misc.PortableImage.Image ) {
 	var params = {
 		width: this.width ,
-		height: this.height ,
+		height: this.height
 	} ;
 
 	switch ( this.colorType ) {
@@ -230,7 +248,7 @@ Ase.prototype.finalize = async function() {
 Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 	var fileSize = readableBuffer.readUInt32LE() ;
 	if ( fileSize !== readableBuffer.buffer.length ) {
-		throw new Error( "Expecting a file of size " + fileSize + " but fot " + buffer.length + "." ) ;
+		throw new Error( "Expecting a file of size " + fileSize + " but got " + readableBuffer.buffer.length + "." ) ;
 	}
 
 	var magicNumber = readableBuffer.readUInt16LE() ;
@@ -260,7 +278,7 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 
 	this.flags = readableBuffer.readUInt32LE() ;
 	this.defaultFrameDuration = readableBuffer.readUInt16LE() ;
-	
+
 	readableBuffer.skip( 8 ) ;	// doc said twice: “Set be 0”
 	this.transparencyColorIndex = readableBuffer.readUInt8() ;
 	readableBuffer.skip( 3 ) ;	// unused
@@ -275,7 +293,7 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 	this.gridY = readableBuffer.readInt16LE() ;
 	this.gridWidth = readableBuffer.readUInt16LE() ;
 	this.gridHeight = readableBuffer.readUInt16LE() ;
-	
+
 	// Unused, reserved for future
 	readableBuffer.skip( 84 ) ;
 } ;
@@ -287,6 +305,8 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 
 
 
+
+// NOT CODED, copy from portable-image-png
 
 
 
@@ -406,7 +426,7 @@ Ase.prototype.generateChunkFromData = function( chunkType , dataBuffer ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./Cel.js":2,"./Frame.js":3,"./Layer.js":4,"./misc.js":5,"buffer":17,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],2:[function(require,module,exports){
+},{"./Cel.js":2,"./Frame.js":3,"./Layer.js":4,"./misc.js":5,"buffer":18,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],2:[function(require,module,exports){
 /*
 	Portable Image Ase
 
@@ -472,12 +492,38 @@ const Ase = require( './Ase.js' ) ;
 
 Cel.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 	var params = this.ase.getImageParams( ImageClass ) ;
-
 	params.width = this.width ;
 	params.height = this.height ;
 	params.pixelBuffer = this.pixelBuffer ;
 
 	return new ImageClass( params ) ;
+} ;
+
+
+
+Cel.prototype.toSpriteImage = function( sprite ) {
+	var params = {
+		channelDef: sprite.channelDef ,
+		width: this.width ,
+		height: this.height ,
+		pixelBuffer: this.pixelBuffer
+	} ;
+
+	return new sprite.Image( params ) ;
+} ;
+
+
+
+Cel.prototype.addSpriteCell = function( sprite , spriteFrame ) {
+	var spriteImage = this.toSpriteImage( sprite ) ;
+	var imageIndex = sprite.addImage( spriteImage ) ;
+	var spriteCell = new sprite.Cell( {
+		imageIndex ,
+		x: this.x ,
+		y: this.y
+	} ) ;
+
+	spriteFrame.addCell( spriteCell ) ;
 } ;
 
 
@@ -538,18 +584,31 @@ const Cel = require( './Cel.js' ) ;
 Frame.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 	var params = this.ase.getImageParams( ImageClass ) ;
 	var image = new ImageClass( params ) ;
-	
+
 	for ( let cel of this.cels ) {
 		if ( ! cel.layer.visible ) { continue ; }
 		let celImage = cel.toImage( ImageClass ) ;
 		celImage.copyTo( image , {
 			compositing: ImageClass.compositing.binaryOver ,
-			x: cel.x , y: cel.y
+			x: cel.x ,
+			y: cel.y
 		} ) ;
 		console.log( "Copy from/to:" , image , celImage , " --- cel: " , cel ) ;
 	}
-	
+
 	return image ;
+} ;
+
+
+
+Frame.prototype.addSpriteFrame = function( sprite ) {
+	var spriteFrame = new sprite.addFrame( { duration: this.duration } ) ;
+
+	for ( let cel of this.cels ) {
+		cel.addSpriteCell( sprite , spriteFrame ) ;
+	}
+
+	return spriteFrame ;
 } ;
 
 
@@ -953,7 +1012,7 @@ exports.deflate = async ( buffer ) => {
 
 
 }).call(this)}).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":19,"buffer":17,"portable-image":15,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],6:[function(require,module,exports){
+},{"_process":20,"buffer":18,"portable-image":16,"stream-kit/lib/SequentialReadBuffer.js":6,"stream-kit/lib/SequentialWriteBuffer.js":7}],6:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1363,7 +1422,7 @@ SequentialReadBuffer.prototype.readUBitsBE = function( bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":17}],7:[function(require,module,exports){
+},{"buffer":18}],7:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Stream Kit
@@ -1811,7 +1870,52 @@ SequentialWriteBuffer.prototype.writeUBitsBE = function( v , bitCount ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":17}],8:[function(require,module,exports){
+},{"buffer":18}],8:[function(require,module,exports){
+/*
+	Portable Image
+
+	Copyright (c) 2024 Cédric Ronvel
+
+	The MIT License (MIT)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+
+"use strict" ;
+
+
+
+/*
+	A Sprite is a sort-of 2-dimensional array of images, with frames as the top-header and layers as the left-header.
+	A Cell is an element of this 2-dimensional array.
+*/
+
+function Cell( params = {} ) {
+	this.imageIndex = + params.imageIndex || 0 ;	// The index of the image stored in Sprite.images
+	this.x = + params.x || 0 ;
+	this.y = + params.y || 0 ;
+}
+
+module.exports = Cell ;
+
+
+},{}],9:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2065,7 +2169,7 @@ ChannelDef.prototype.getClosestPaletteIndex = ( channelValues ) => {
 } ;
 
 
-},{"./Mapping.js":12,"./compositing.js":14}],9:[function(require,module,exports){
+},{"./Mapping.js":13,"./compositing.js":15}],10:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2110,26 +2214,36 @@ const Image = require( './Image.js' ) ;
 
 
 
-Frame.prototype.toImage = function( ImageClass = Image ) {
-	var params = this.ase.getPortableImageParams( ImageClass ) ;
-	var portableImage = new ImageClass( params ) ;
-
-	for ( let cel of this.cels ) {
-		if ( ! cel.layer.visible ) { continue ; }
-		let celImage = cel.toImage( ImageClass ) ;
-		celImage.copyTo( portableImage , {
-			compositing: ImageClass.compositing.binaryOver ,
-			x: cel.x ,
-			y: cel.y
-		} ) ;
-		console.log( "Copy from/to:" , portableImage , celImage , " --- cel: " , cel ) ;
-	}
-
-	return portableImage ;
+Frame.prototype.addCell = function( cell ) {
+	this.cells.push( cell ) ;
+	return this.cells.length - 1 ;
 } ;
 
 
-},{"./Image.js":10,"./Layer.js":11,"./Sprite.js":13}],10:[function(require,module,exports){
+
+Frame.prototype.toImage = function( ImageClass = Image ) {
+	var image = new Image( {
+		width: this.sprite.width ,
+		height: this.sprite.height ,
+		channelDef: this.sprite.channelDef
+	} ) ;
+	
+	for ( let cell of this.cells ) {
+		let cellImage = this.sprite.images[ cell.imageIndex ] ;
+		
+		cellImage.copyTo( image , {
+			compositing: Image.compositing.binaryOver ,
+			x: cell.x ,
+			y: cell.y
+		} ) ;
+		console.log( "Copy from/to:" , image , cellImage , " --- cell: " , cell ) ;
+	}
+
+	return image ;
+} ;
+
+
+},{"./Image.js":11,"./Layer.js":12,"./Sprite.js":14}],11:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Portable Image
@@ -2158,10 +2272,6 @@ Frame.prototype.toImage = function( ImageClass = Image ) {
 */
 
 "use strict" ;
-
-
-
-const ChannelDef = require( './ChannelDef.js' ) ;
 
 
 
@@ -2209,7 +2319,8 @@ module.exports = Image ;
 
 
 
-Image.ChannelDef = ChannelDef ;
+const ChannelDef = Image.ChannelDef = Image.prototype.ChannelDef = require( './ChannelDef.js' ) ;
+
 Image.compositing = require( './compositing.js' ) ;
 
 Image.prototype.setPalette = function( palette ) { this.channelDef.setPalette( palette ) ; } ;
@@ -2642,7 +2753,7 @@ Image.prototype.updateFromImageData = function( imageData , mapping ) {
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./ChannelDef.js":8,"./compositing.js":14,"buffer":17}],11:[function(require,module,exports){
+},{"./ChannelDef.js":9,"./compositing.js":15,"buffer":18}],12:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2684,7 +2795,7 @@ function Layer( name , params = {} ) {
 module.exports = Layer ;
 
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2944,7 +3055,7 @@ Mapping.RGB_COMPATIBLE_TO_GRAY_ALPHA = new MatrixChannelMapping(
 ) ;
 
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -2981,16 +3092,11 @@ Mapping.RGB_COMPATIBLE_TO_GRAY_ALPHA = new MatrixChannelMapping(
 
 
 
-const Frame = require( './Frame.js' ) ;
-const Layer = require( './Layer.js' ) ;
-const Image = require( './Image.js' ) ;
-
-
-
 function Sprite( params = {} ) {
 	// Clipping size
 	this.width = params.width ;
 	this.height = params.height ;
+	this.channelDef = params.channelDef ?? new ChannelDef( params ) ;
 
 	this.images = [] ;	// Image instances
 	this.layers = [] ;	// Layer instances
@@ -2999,20 +3105,33 @@ function Sprite( params = {} ) {
 
 	this.orderedLayers = [] ;	// Store layer indexes
 	this.animationByName = new Map() ;	// Animation name to animation index
-
-	/*
-	if ( Array.isArray( params.palette ) ) {
-		this.setPalette( params.palette ) ;
-	}
-
-	this.channelIndex = {} ;
-	for ( let i = 0 ; i < this.channels.length ; i ++ ) {
-		this.channelIndex[ this.channels[ i ] ] = i ;
-	}
-	*/
 }
 
 module.exports = Sprite ;
+
+
+
+const ChannelDef = Sprite.ChannelDef = Sprite.prototype.ChannelDef = require( './ChannelDef.js' ) ;
+
+const Image = Sprite.Image = Sprite.prototype.Image = require( './Image.js' ) ;
+const Frame = Sprite.Frame = Sprite.prototype.Frame = require( './Frame.js' ) ;
+const Layer = Sprite.Layer = Sprite.prototype.Layer = require( './Layer.js' ) ;
+const Cell = Sprite.Cell = Sprite.prototype.Cell = require( './Cell.js' ) ;
+
+
+
+Sprite.prototype.addImage = function( image ) {
+	this.images.push( image ) ;
+	return this.images.length - 1 ;
+} ;
+
+
+
+// .addFrame( Frame | frameParams )
+Sprite.prototype.addFrame = function( frame ) {
+	if ( ! ( frame instanceof Frame ) ) { frame = new Frame( this , frame ) ; }
+	this.frames.push( frame ) ;
+} ;
 
 
 
@@ -3022,7 +3141,7 @@ Sprite.prototype.toImage = function( ImageClass ) {
 } ;
 
 
-},{"./Frame.js":9,"./Image.js":10,"./Layer.js":11}],14:[function(require,module,exports){
+},{"./Cell.js":8,"./ChannelDef.js":9,"./Frame.js":10,"./Image.js":11,"./Layer.js":12}],15:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -3152,7 +3271,7 @@ compositing.overlay = {
 } ;
 
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 /*
 	Portable Image
 
@@ -3192,7 +3311,7 @@ lib.Mapping = require( './Mapping.js' ) ;
 lib.compositing = require( './compositing.js' ) ;
 
 
-},{"./Image.js":10,"./Mapping.js":12,"./Sprite.js":13,"./compositing.js":14}],16:[function(require,module,exports){
+},{"./Image.js":11,"./Mapping.js":13,"./Sprite.js":14,"./compositing.js":15}],17:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -3344,7 +3463,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -5125,7 +5244,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":16,"buffer":17,"ieee754":18}],18:[function(require,module,exports){
+},{"base64-js":17,"buffer":18,"ieee754":19}],19:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -5212,7 +5331,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 

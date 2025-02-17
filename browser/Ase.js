@@ -51,7 +51,7 @@ function Ase() {
 
 	this.flags = - 1 ;
 	this.defaultFrameDuration = - 1 ;
-	this.transparencyColorIndex = -1 ;	// transparency index, only for indexed mode
+	this.transparencyColorIndex = - 1 ;	// transparency index, only for indexed mode
 	this.colorCount = - 1 ;
 	this.pixelWidth = - 1 ;
 	this.pixelHeight = - 1 ;
@@ -59,13 +59,13 @@ function Ase() {
 	this.gridX = 0 ;
 	this.gridY = 0 ;
 	this.gridWidth = - 1 ;
-    this.gridHeight = - 1 ;
-    
-    // Frames data
-    this.frames = [] ;
+	this.gridHeight = - 1 ;
 
-    // Linked data
-    this.palette = null ;
+	// Frames data
+	this.frames = [] ;
+
+	// Linked data
+	this.palette = null ;
 }
 
 module.exports = Ase ;
@@ -150,6 +150,7 @@ Ase.decodeImage = function( buffer , options = {} ) {
 
 
 
+// Create a PortableImage.Image from the ASE
 Ase.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 	// Only the first frame
 	return this.frames[ 0 ].toImage( ImageClass ) ;
@@ -157,10 +158,27 @@ Ase.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 
 
 
+// Create a PortableImage.Sprite from the ASE
+Ase.prototype.toSprite = function( SpriteClass = misc.PortableImage.Sprite ) {
+	var params = this.ase.getImageParams( SpriteClass.Image ) ;
+	params.width = this.pixelWidth ;
+	params.height = this.pixelHeight ;
+
+	var sprite = new SpriteClass( params ) ;
+
+	for ( let frame of this.frames ) {
+		frame.addSpriteFrame( sprite ) ;
+	}
+
+	return sprite ;
+} ;
+
+
+
 Ase.prototype.getImageParams = function( ImageClass = misc.PortableImage.Image ) {
 	var params = {
 		width: this.width ,
-		height: this.height ,
+		height: this.height
 	} ;
 
 	switch ( this.colorType ) {
@@ -230,7 +248,7 @@ Ase.prototype.finalize = async function() {
 Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 	var fileSize = readableBuffer.readUInt32LE() ;
 	if ( fileSize !== readableBuffer.buffer.length ) {
-		throw new Error( "Expecting a file of size " + fileSize + " but fot " + buffer.length + "." ) ;
+		throw new Error( "Expecting a file of size " + fileSize + " but got " + readableBuffer.buffer.length + "." ) ;
 	}
 
 	var magicNumber = readableBuffer.readUInt16LE() ;
@@ -260,7 +278,7 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 
 	this.flags = readableBuffer.readUInt32LE() ;
 	this.defaultFrameDuration = readableBuffer.readUInt16LE() ;
-	
+
 	readableBuffer.skip( 8 ) ;	// doc said twice: “Set be 0”
 	this.transparencyColorIndex = readableBuffer.readUInt8() ;
 	readableBuffer.skip( 3 ) ;	// unused
@@ -275,7 +293,7 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 	this.gridY = readableBuffer.readInt16LE() ;
 	this.gridWidth = readableBuffer.readUInt16LE() ;
 	this.gridHeight = readableBuffer.readUInt16LE() ;
-	
+
 	// Unused, reserved for future
 	readableBuffer.skip( 84 ) ;
 } ;
@@ -287,6 +305,8 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 
 
 
+
+// NOT CODED, copy from portable-image-png
 
 
 
@@ -472,12 +492,38 @@ const Ase = require( './Ase.js' ) ;
 
 Cel.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 	var params = this.ase.getImageParams( ImageClass ) ;
-
 	params.width = this.width ;
 	params.height = this.height ;
 	params.pixelBuffer = this.pixelBuffer ;
 
 	return new ImageClass( params ) ;
+} ;
+
+
+
+Cel.prototype.toSpriteImage = function( sprite ) {
+	var params = {
+		channelDef: sprite.channelDef ,
+		width: this.width ,
+		height: this.height ,
+		pixelBuffer: this.pixelBuffer
+	} ;
+
+	return new sprite.Image( params ) ;
+} ;
+
+
+
+Cel.prototype.addSpriteCell = function( sprite , spriteFrame ) {
+	var spriteImage = this.toSpriteImage( sprite ) ;
+	var imageIndex = sprite.addImage( spriteImage ) ;
+	var spriteCell = new sprite.Cell( {
+		imageIndex ,
+		x: this.x ,
+		y: this.y
+	} ) ;
+
+	spriteFrame.addCell( spriteCell ) ;
 } ;
 
 
@@ -538,18 +584,31 @@ const Cel = require( './Cel.js' ) ;
 Frame.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 	var params = this.ase.getImageParams( ImageClass ) ;
 	var image = new ImageClass( params ) ;
-	
+
 	for ( let cel of this.cels ) {
 		if ( ! cel.layer.visible ) { continue ; }
 		let celImage = cel.toImage( ImageClass ) ;
 		celImage.copyTo( image , {
 			compositing: ImageClass.compositing.binaryOver ,
-			x: cel.x , y: cel.y
+			x: cel.x ,
+			y: cel.y
 		} ) ;
 		console.log( "Copy from/to:" , image , celImage , " --- cel: " , cel ) ;
 	}
-	
+
 	return image ;
+} ;
+
+
+
+Frame.prototype.addSpriteFrame = function( sprite ) {
+	var spriteFrame = new sprite.addFrame( { duration: this.duration } ) ;
+
+	for ( let cel of this.cels ) {
+		cel.addSpriteCell( sprite , spriteFrame ) ;
+	}
+
+	return spriteFrame ;
 } ;
 
 
