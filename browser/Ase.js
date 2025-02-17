@@ -160,9 +160,9 @@ Ase.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 
 // Create a PortableImage.Sprite from the ASE
 Ase.prototype.toSprite = function( SpriteClass = misc.PortableImage.Sprite ) {
-	var params = this.ase.getImageParams( SpriteClass.Image ) ;
-	params.width = this.pixelWidth ;
-	params.height = this.pixelHeight ;
+	var params = this.getImageParams( SpriteClass.Image ) ;
+	params.width = this.width ;
+	params.height = this.height ;
 
 	var sprite = new SpriteClass( params ) ;
 
@@ -514,7 +514,8 @@ Cel.prototype.toSpriteImage = function( sprite ) {
 
 
 
-Cel.prototype.addSpriteCell = function( sprite , spriteFrame ) {
+Cel.prototype.addSpriteCell = function( spriteFrame ) {
+	var sprite = spriteFrame.sprite ;
 	var spriteImage = this.toSpriteImage( sprite ) ;
 	var imageIndex = sprite.addImage( spriteImage ) ;
 	var spriteCell = new sprite.Cell( {
@@ -602,10 +603,11 @@ Frame.prototype.toImage = function( ImageClass = misc.PortableImage.Image ) {
 
 
 Frame.prototype.addSpriteFrame = function( sprite ) {
-	var spriteFrame = new sprite.addFrame( { duration: this.duration } ) ;
+	var spriteFrame = new sprite.Frame( { duration: this.duration } ) ;
+	sprite.addFrame( spriteFrame ) ;
 
 	for ( let cel of this.cels ) {
-		cel.addSpriteCell( sprite , spriteFrame ) ;
+		cel.addSpriteCell( spriteFrame ) ;
 	}
 
 	return spriteFrame ;
