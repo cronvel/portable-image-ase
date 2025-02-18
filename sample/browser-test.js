@@ -59,40 +59,6 @@ async function testImage() {
 
 
 
-async function testAnimation() {
-	var filename , imageDataParams , ase , portableSprite ,
-		$canvas = document.getElementById( 'canvas' ) ,
-		ctx = $canvas.getContext( '2d' ) ;
-
-	//filename = 'heart.ase' ;
-	filename = 'anim.ase' ;
-	ase = await Ase.load( filename ) ;
-
-	portableSprite = ase.toSprite() ;
-	console.log( "portableSprite:" , portableSprite ) ;
-
-	//ctx.fillStyle = "green"; ctx.fillRect(0, 0, 100, 100);
-
-	//imageDataParams = {} ;
-	imageDataParams = {
-		scaleX: 10 , scaleY: 10
-		//scaleX: 20 , scaleY: 20
-	} ;
-
-	var imageData = portableSprite.prepareImageData( imageDataParams ) ;
-	
-	for ( let i = 0 ; true ; i ++ ) {
-		let frameNumber = i % portableSprite.frames.length ;
-		
-		//console.log( "******* about to render frame #" + frameNumber ) ;
-		portableSprite.frames[ frameNumber ].updateImageData( imageData , imageDataParams ) ;
-		ctx.putImageData( imageData , 0 , 0 ) ;
-		await new Promise( resolve => setTimeout( resolve , 500 ) ) ;
-	}
-}
-
-
-
 async function testAnimator() {
 	var filename , imageDataParams , ase , portableSprite ,
 		$canvas = document.getElementById( 'canvas' ) ,
@@ -110,8 +76,10 @@ async function testAnimator() {
 	var animator = portableSprite.createAnimator( {
 		ctx ,
 		scaleX: 10 ,
-		scaleY: 10
+		scaleY: 10 ,
+		useCache: true
 	} ) ;
+
 	animator.start() ;
 }
 

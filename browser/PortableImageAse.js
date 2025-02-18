@@ -1945,10 +1945,15 @@ module.exports = Animation ;
 
 
 
+/*
+	Autoplay an animation.
+*/
+
 function Animator( sprite , params = {} ) {
 	this.sprite = sprite ;
 	this.startFrame = + params.startFrame || 0 ;
 	this.endFrame = params.endFrame ?? sprite.frames.length ;
+	this.useCache = !! params.useCache ;
 
 	this.scaleX = params.scaleX ?? params.scale ?? 1 ;
 	this.scaleY = params.scaleY ?? params.scale ?? 1 ;
@@ -1977,24 +1982,40 @@ Animator.prototype.start = function() {
 
 
 
+Animator.prototype.stop = function() {
+	this.running = false ;
+} ;
+
+
+
 Animator.prototype.runLoop = function() {
 	if ( ! this.running ) { return ; }
 
 	//console.log( "******* about to render frame #" + this.frameIndex ) ;
-	var frame = this.sprite.frames[ this.frameIndex ] ;
-	frame.updateImageData( this.imageData , this.blitParams ) ;
-	this.ctx.putImageData( this.imageData , this.x , this.y ) ;
+	var imageData ,
+		frame = this.sprite.frames[ this.frameIndex ] ;
+	
+	if ( this.useCache ) {
+		if ( ! frame.imageDataCache ) { frame.updateImageData( null , this.blitParams ) ; }
+		imageData = frame.imageDataCache ;
+	}
+	else {
+		if ( this.imageData ) {
+			frame.updateImageData( this.imageData , this.blitParams ) ;
+		}
+		else {
+			this.imageData = frame.createImageData( this.blitParams ) ;
+		}
+
+		imageData = this.imageData ;
+	}
+
+	this.ctx.putImageData( imageData , this.x , this.y ) ;
 
 	this.frameIndex ++ ;
 	if ( this.frameIndex >= this.endFrame ) { this.frameIndex = this.startFrame ; }
 
 	setTimeout( () => this.runLoop() , frame.duration ) ;
-} ;
-
-
-
-Animator.prototype.stop = function() {
-	this.running = false ;
 } ;
 
 
@@ -2332,6 +2353,7 @@ function Frame( params = {} , sprite = null ) {
 	Object.defineProperty( this , 'sprite' , { configurable: true , value: sprite } ) ;
 	this.duration = params.duration ;	// in ms
 	this.cells = [] ;	// Cells are ordered so that indexes are the than Sprite.layers indexes
+	this.imageDataCache = null ;
 }
 
 module.exports = Frame ;
@@ -2344,6 +2366,12 @@ const Image = require( './Image.js' ) ;
 
 Frame.prototype.setParent = function( sprite ) {
 	Object.defineProperty( this , 'sprite' , { value: sprite } ) ;
+} ;
+
+
+
+Frame.prototype.clearCache = function() {
+	this.imageDataCache = null ;
 } ;
 
 
@@ -2385,14 +2413,27 @@ Frame.prototype.prepareImageData = function( params = {} ) { return this.sprite.
 
 Frame.prototype.createImageData = function( params = {} ) {
 	var imageData = this.sprite.prepareImageData( params ) ;
-	this.updateImageData( imageData , params ) ;
+	this.updateImageData( imageData , params , true ) ;
 	return imageData ;
 } ;
 
 
 
-Frame.prototype.updateImageData = function( imageData , params ) {
+Frame.prototype.updateImageData = function( imageData , params , noClear = false ) {
 	params = params ? Object.assign( {} , params ) : {} ;
+
+	if ( ! imageData ) {
+		if ( this.imageDataCache ) {
+			imageData = this.imageDataCache ;
+			if ( ! noClear ) { imageData.data.fill( 0 ) ; }
+		}
+		else {
+			imageData = this.imageDataCache = this.sprite.prepareImageData( params ) ;
+		}
+	}
+	else if ( ! noClear ) {
+		imageData.data.fill( 0 ) ;
+	}
 
 	for ( let cell of this.cells ) {
 		let cellImage = this.sprite.images[ cell.imageIndex ] ;
@@ -2403,7 +2444,7 @@ Frame.prototype.updateImageData = function( imageData , params ) {
 		params.innerY = cell.y ;
 
 		params.compositing = Image.compositing.binaryOver ;
-		cellImage.updateImageData( imageData , params ) ;
+		cellImage.updateImageData( imageData , params , true ) ;
 	}
 } ;
 
@@ -2609,19 +2650,21 @@ Image.prototype.prepareImageData = function( params = {} ) {
 // Create an ImageData and copy pixels to it
 Image.prototype.createImageData = function( params = {} ) {
 	var imageData = this.prepareImageData( params ) ;
-	this.updateImageData( imageData , params ) ;
+	this.updateImageData( imageData , params , true ) ;
 	return imageData ;
 } ;
 
 
 
 // Copy pixels to an existing ImageData
-Image.prototype.updateImageData = function( imageData , params = {} ) {
+Image.prototype.updateImageData = function( imageData , params = {} , noClear = false ) {
 	var mapping = params.mapping ,
 		scaleX = params.scaleX ?? params.scale ?? 1 ,
 		scaleY = params.scaleY ?? params.scale ?? 1 ;
 
-	//console.log( "Image.prototype.updateImageData() params:" , params ) ;
+	if ( ! noClear ) { imageData.data.fill( 0 ) ; }
+
+    //console.log( "Image.prototype.updateImageData() params:" , params ) ;
 
 	if ( ! mapping ) {
 		if ( imageData.width === this.width && imageData.height === this.height && ! params.x && ! params.y && scaleX === 1 && scaleY === 1 ) {
@@ -3340,6 +3383,12 @@ Sprite.prototype.prepareImageData = function( params = {} ) {
 
 Sprite.prototype.createAnimator = function( params = {} ) {
 	return new Animator( this , params ) ;
+} ;
+
+
+
+Sprite.prototype.clearCache = function() {
+	for ( let frame of this.frames ) { frame.clearCache() ; }
 } ;
 
 
