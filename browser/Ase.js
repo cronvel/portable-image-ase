@@ -66,6 +66,7 @@ function Ase() {
 
 	// Linked data
 	this.palette = null ;
+	this.flattenLayers = null ;	// Layers have hierarchy, but here they are in a flat-list
 }
 
 module.exports = Ase ;
@@ -170,6 +171,10 @@ Ase.prototype.toSprite = function( SpriteClass = misc.PortableImage.Sprite ) {
 		frame.addSpriteFrame( sprite ) ;
 	}
 
+	for ( let layer of this.flattenLayers ) {
+		layer.addSpriteLayer( sprite ) ;
+	}
+
 	return sprite ;
 } ;
 
@@ -233,6 +238,8 @@ Ase.prototype.finalize = async function() {
 	if ( this.colorType === Ase.COLOR_TYPE_INDEXED ) {
 		this.palette = firstFrame.palette ;
 	}
+
+	this.flattenLayers = firstFrame.flattenLayers ;
 
 	for ( let frame of this.frames ) {
 		for ( let cel of frame.cels ) {
@@ -309,7 +316,7 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 // NOT CODED, copy from portable-image-png
 
 
-
+/*
 Ase.prototype.save = async function( url , options = {} ) {
 	var buffer = await this.encode( options ) ;
 	await misc.saveFileAsync( url , buffer ) ;
@@ -423,6 +430,7 @@ Ase.prototype.generateChunkFromData = function( chunkType , dataBuffer ) {
 
 	return chunkBuffer ;
 } ;
+*/
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
@@ -740,6 +748,10 @@ chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 			// Tilemap
 			console.log( "Tilemap is unsupported ATM" ) ;
 			break ;
+		default :
+			// Unknown
+			console.log( "Unknown layer type: " + layer.type ) ;
+			break ;
 	}
 
 	layer.childLevel = readableBuffer.readUInt16LE() ;
@@ -882,16 +894,57 @@ chunkDecoders[ 0x2007 ] = function( readableBuffer , options ) {
 
 
 function Layer() {
-	this.visible = true ;
+	this.name = '' ;
 	this.type = - 1 ;
+	this.visible = true ;
 	this.childLevel = - 1 ;
 	this.blendMode = - 1 ;
 	this.opacity = - 1 ;
-	this.name = '' ;
 	this.tilesetIndex = - 1 ;
 }
 
 module.exports = Layer ;
+
+
+
+Layer.TYPE_IMAGE = 0 ;
+Layer.TYPE_GROUP = 1 ;
+Layer.TYPE_TILEMAP = 2 ;
+
+Layer.BLEND_NORMAL = 0 ;
+Layer.BLEND_MULTIPLY = 1 ;
+Layer.BLEND_SCREEN = 2 ;
+Layer.BLEND_OVERLAY = 3 ;
+Layer.BLEND_DARKEN = 4 ;
+Layer.BLEND_LIGHTEN = 5 ;
+Layer.BLEND_COLOR_DODGE = 6 ;
+Layer.BLEND_COLOR_BURN = 7 ;
+Layer.BLEND_HARD_LIGHT = 8 ;
+Layer.BLEND_SOFT_LIGHT = 9 ;
+Layer.BLEND_DIFFERENCE = 10 ;
+Layer.BLEND_EXCLUSION = 11 ;
+Layer.BLEND_HUE = 12 ;
+Layer.BLEND_SATURATION = 13 ;
+Layer.BLEND_COLOR = 14 ;
+Layer.BLEND_LUMINOSITY = 15 ;
+Layer.BLEND_ADDITION = 16 ;
+Layer.BLEND_SUBTRACT = 17 ;
+Layer.BLEND_DIVIDE = 18 ;
+
+
+
+Layer.prototype.addSpriteLayer = function( sprite ) {
+	if ( this.type !== Layer.TYPE_IMAGE ) { return ; }
+
+	var spriteLayer = new sprite.Layer( this.name , {
+		visible: this.visible ,
+		opacity: this.opacity / 255
+	} ) ;
+
+	sprite.addLayer( spriteLayer ) ;
+
+	return spriteLayer ;
+} ;
 
 
 },{}],5:[function(require,module,exports){

@@ -41,9 +41,10 @@ async function testImage() {
 	//filename = 'heart.ase' ;
 	filename = 'anim.ase' ;
 	ase = await Ase.load( filename ) ;
+	console.log( "Ase:" , ase ) ;
 
 	portableImage = ase.toImage() ;
-	console.log( "portableImage:" , portableImage ) ;
+	console.log( "PortableImage:" , portableImage ) ;
 
 	//ctx.fillStyle = "green"; ctx.fillRect(0, 0, 100, 100);
 
@@ -67,9 +68,13 @@ async function testAnimator() {
 	//filename = 'heart.ase' ;
 	filename = 'anim.ase' ;
 	ase = await Ase.load( filename ) ;
+	console.log( "Ase:" , ase ) ;
 
 	portableSprite = ase.toSprite() ;
-	console.log( "portableSprite:" , portableSprite ) ;
+	console.log( "PortableSprite:" , portableSprite ) ;
+
+	portableSprite.flatten() ;
+	console.log( "PortableSprite:" , portableSprite ) ;
 
 	//ctx.fillStyle = "green"; ctx.fillRect(0, 0, 100, 100);
 
@@ -96,6 +101,5 @@ const ready = callback => {
 
 
 //ready( testImage ) ;
-//ready( testAnimation ) ;
 ready( testAnimator ) ;
 

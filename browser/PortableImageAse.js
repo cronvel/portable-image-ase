@@ -66,6 +66,7 @@ function Ase() {
 
 	// Linked data
 	this.palette = null ;
+	this.flattenLayers = null ;	// Layers have hierarchy, but here they are in a flat-list
 }
 
 module.exports = Ase ;
@@ -170,6 +171,10 @@ Ase.prototype.toSprite = function( SpriteClass = misc.PortableImage.Sprite ) {
 		frame.addSpriteFrame( sprite ) ;
 	}
 
+	for ( let layer of this.flattenLayers ) {
+		layer.addSpriteLayer( sprite ) ;
+	}
+
 	return sprite ;
 } ;
 
@@ -233,6 +238,8 @@ Ase.prototype.finalize = async function() {
 	if ( this.colorType === Ase.COLOR_TYPE_INDEXED ) {
 		this.palette = firstFrame.palette ;
 	}
+
+	this.flattenLayers = firstFrame.flattenLayers ;
 
 	for ( let frame of this.frames ) {
 		for ( let cel of frame.cels ) {
@@ -309,7 +316,7 @@ Ase.prototype.decodeHeader = function( readableBuffer , options = {} ) {
 // NOT CODED, copy from portable-image-png
 
 
-
+/*
 Ase.prototype.save = async function( url , options = {} ) {
 	var buffer = await this.encode( options ) ;
 	await misc.saveFileAsync( url , buffer ) ;
@@ -423,6 +430,7 @@ Ase.prototype.generateChunkFromData = function( chunkType , dataBuffer ) {
 
 	return chunkBuffer ;
 } ;
+*/
 
 
 }).call(this)}).call(this,require("buffer").Buffer)
@@ -740,6 +748,10 @@ chunkDecoders[ 0x2004 ] = function( readableBuffer , options ) {
 			// Tilemap
 			console.log( "Tilemap is unsupported ATM" ) ;
 			break ;
+		default :
+			// Unknown
+			console.log( "Unknown layer type: " + layer.type ) ;
+			break ;
 	}
 
 	layer.childLevel = readableBuffer.readUInt16LE() ;
@@ -882,16 +894,57 @@ chunkDecoders[ 0x2007 ] = function( readableBuffer , options ) {
 
 
 function Layer() {
-	this.visible = true ;
+	this.name = '' ;
 	this.type = - 1 ;
+	this.visible = true ;
 	this.childLevel = - 1 ;
 	this.blendMode = - 1 ;
 	this.opacity = - 1 ;
-	this.name = '' ;
 	this.tilesetIndex = - 1 ;
 }
 
 module.exports = Layer ;
+
+
+
+Layer.TYPE_IMAGE = 0 ;
+Layer.TYPE_GROUP = 1 ;
+Layer.TYPE_TILEMAP = 2 ;
+
+Layer.BLEND_NORMAL = 0 ;
+Layer.BLEND_MULTIPLY = 1 ;
+Layer.BLEND_SCREEN = 2 ;
+Layer.BLEND_OVERLAY = 3 ;
+Layer.BLEND_DARKEN = 4 ;
+Layer.BLEND_LIGHTEN = 5 ;
+Layer.BLEND_COLOR_DODGE = 6 ;
+Layer.BLEND_COLOR_BURN = 7 ;
+Layer.BLEND_HARD_LIGHT = 8 ;
+Layer.BLEND_SOFT_LIGHT = 9 ;
+Layer.BLEND_DIFFERENCE = 10 ;
+Layer.BLEND_EXCLUSION = 11 ;
+Layer.BLEND_HUE = 12 ;
+Layer.BLEND_SATURATION = 13 ;
+Layer.BLEND_COLOR = 14 ;
+Layer.BLEND_LUMINOSITY = 15 ;
+Layer.BLEND_ADDITION = 16 ;
+Layer.BLEND_SUBTRACT = 17 ;
+Layer.BLEND_DIVIDE = 18 ;
+
+
+
+Layer.prototype.addSpriteLayer = function( sprite ) {
+	if ( this.type !== Layer.TYPE_IMAGE ) { return ; }
+
+	var spriteLayer = new sprite.Layer( this.name , {
+		visible: this.visible ,
+		opacity: this.opacity / 255
+	} ) ;
+
+	sprite.addLayer( spriteLayer ) ;
+
+	return spriteLayer ;
+} ;
 
 
 },{}],5:[function(require,module,exports){
@@ -1994,7 +2047,7 @@ Animator.prototype.runLoop = function() {
 	//console.log( "******* about to render frame #" + this.frameIndex ) ;
 	var imageData ,
 		frame = this.sprite.frames[ this.frameIndex ] ;
-	
+
 	if ( this.useCache ) {
 		if ( ! frame.imageDataCache ) { frame.updateImageData( null , this.blitParams ) ; }
 		imageData = frame.imageDataCache ;
@@ -2103,7 +2156,7 @@ module.exports = Cell ;
 */
 function ChannelDef( params = {} ) {
 	this.channels = Array.isArray( params.channels ) ? params.channels : ChannelDef.RGBA ;
-	this.indexed = params.indexed || Array.isArray( params.palette ) ;
+	this.indexed = !! params.indexed || Array.isArray( params.palette ) ;
 	this.bytesPerPixel = this.indexed ? 1 : this.channels.length ;
 	this.palette = this.indexed ? [] : null ;
 
@@ -2145,6 +2198,16 @@ ChannelDef.RGB = [ 'red' , 'green' , 'blue' ] ;
 ChannelDef.RGBA = [ 'red' , 'green' , 'blue' , 'alpha' ] ;
 ChannelDef.GRAY = [ 'gray' ] ;
 ChannelDef.GRAY_ALPHA = [ 'gray' , 'alpha' ] ;
+
+
+
+ChannelDef.prototype.clone = function() {
+	return new ChannelDef( {
+		channels: [ ... this.channels ] ,
+		indexed: this.indexed ,
+		palette: this.palette
+	} ) ;
+} ;
 
 
 
@@ -2360,6 +2423,7 @@ module.exports = Frame ;
 
 const Sprite = require( './Sprite.js' ) ;
 const Layer = require( './Layer.js' ) ;
+const Cell = require( './Cell.js' ) ;
 const Image = require( './Image.js' ) ;
 
 
@@ -2383,16 +2447,16 @@ Frame.prototype.addCell = function( cell ) {
 
 
 
-Frame.prototype.toImage = function( ImageClass = Image ) {
+Frame.prototype.toImage = function( ImageClass = Image , internal = false ) {
 	var image = new Image( {
 		width: this.sprite.width ,
 		height: this.sprite.height ,
-		channelDef: this.sprite.channelDef
+		channelDef: internal ? this.sprite.channelDef : this.sprite.channelDef.clone()
 	} ) ;
-	
+
 	for ( let cell of this.cells ) {
 		let cellImage = this.sprite.images[ cell.imageIndex ] ;
-		
+
 		cellImage.copyTo( image , {
 			compositing: Image.compositing.binaryOver ,
 			x: cell.x ,
@@ -2401,6 +2465,17 @@ Frame.prototype.toImage = function( ImageClass = Image ) {
 		console.log( "Copy from/to:" , image , cellImage , " --- cell: " , cell ) ;
 	}
 
+	return image ;
+} ;
+
+
+
+// Internal
+Frame.prototype.flatten = function() {
+	var image = this.toImage( Image , true ) ;
+	var imageIndex = this.sprite.addImage( image ) ;
+	this.cells[ 0 ] = new Cell( { imageIndex } ) ;
+	this.cells.length = 1 ;
 	return image ;
 } ;
 
@@ -2449,7 +2524,7 @@ Frame.prototype.updateImageData = function( imageData , params , noClear = false
 } ;
 
 
-},{"./Image.js":13,"./Layer.js":14,"./Sprite.js":16}],13:[function(require,module,exports){
+},{"./Cell.js":10,"./Image.js":13,"./Layer.js":14,"./Sprite.js":16}],13:[function(require,module,exports){
 (function (Buffer){(function (){
 /*
 	Portable Image
@@ -2664,7 +2739,7 @@ Image.prototype.updateImageData = function( imageData , params = {} , noClear = 
 
 	if ( ! noClear ) { imageData.data.fill( 0 ) ; }
 
-    //console.log( "Image.prototype.updateImageData() params:" , params ) ;
+	//console.log( "Image.prototype.updateImageData() params:" , params ) ;
 
 	if ( ! mapping ) {
 		if ( imageData.width === this.width && imageData.height === this.height && ! params.x && ! params.y && scaleX === 1 && scaleY === 1 ) {
@@ -3364,9 +3439,70 @@ Sprite.prototype.addFrame = function( frame ) {
 
 
 
+Sprite.prototype.addLayer = function( layer ) {
+	this.layers.push( layer ) ;
+
+	// For instance, we force a layer order
+	var index = this.layers.length - 1 ;
+	layer.order = index ;
+	this.orderedLayers.push( index ) ;
+	return index ;
+} ;
+
+
+
 Sprite.prototype.toImage = function( ImageClass ) {
 	// Only the first frame
 	return this.frames[ 0 ].toImage( ImageClass ) ;
+} ;
+
+
+
+Sprite.prototype.flatten = function() {
+	for ( let frame of this.frames ) { frame.flatten() ; }
+	this.cleanImageIndexes() ;
+} ;
+
+
+
+// Removed unused images and re-index
+Sprite.prototype.cleanImageIndexes = function() {
+
+	// First, mark which image is used or unused
+
+	var isUsed = new Array( this.images.length ).fill( false ) ;
+
+	for ( let frame of this.frames ) {
+		for ( let cell of frame.cells ) {
+			isUsed[ cell.imageIndex ] = true ;
+		}
+	}
+
+	// Now remove and re-index images, and map the index changes
+
+	var newIndex = 0 ,
+		indexMap = new Array( this.images.length ) ;
+	
+	for ( let currentIndex = 0 ; currentIndex < isUsed.length ; currentIndex ++ ) {
+		if ( isUsed[ currentIndex ] ) {
+			if ( currentIndex !== newIndex ) {
+				this.images[ newIndex ] = this.images[ currentIndex ] ;
+			}
+
+			indexMap[ currentIndex ] = newIndex ;
+			newIndex ++ ;
+		}
+	}
+
+	this.images.length = newIndex ;
+
+	// Finally, update the new indexes everywhere
+	
+	for ( let frame of this.frames ) {
+		for ( let cell of frame.cells ) {
+			cell.imageIndex = indexMap[ cell.imageIndex ] ;
+		}
+	}
 } ;
 
 
